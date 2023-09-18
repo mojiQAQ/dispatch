@@ -1,0 +1,18 @@
+AdminPort:   7001
+Logger:
+  Level:          debug
+  Development:    true
+  Prometheus:     true
+HTTPDial:
+  Timeout: 10
+  WithProxyPort: 0
+HTTPServer:
+  ServicePort: 7000
+  Timeout: 10
+Database:
+  Write:
+    Addr: "root:root@tcp(127.0.0.1:3306)/dispatch?charset=utf8&parseTime=true&loc=Local"
+    PoolSize: 50
+  Read:
+    Addr: "root:root@tcp(127.0.0.1:3306)/dispatch?charset=utf8&parseTime=true&loc=Local"
+    PoolSize: 50
