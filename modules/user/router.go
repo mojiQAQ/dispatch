@@ -1,6 +1,7 @@
 package user
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -55,21 +56,73 @@ type (
 
 		Users []*model.TUser `json:"users"`
 	}
+
+	ReqLogin struct {
+		*model.ReqBase
+	}
+
+	RespLogin struct {
+		*model.RespBase
+		Token  string `json:"token"`
+		OpenID string `json:"openid"`
+	}
 )
 
 func (c *Ctl) InitRouter(g *gin.RouterGroup) {
 
+	g.GET("/login", c.HandleLogin)
+
 	// 查询所有用户
-	g.GET("/users")
+	g.GET("/users", c.HandleGetUsers)
 
 	// 注册用户
 	g.POST("/users", c.HandleRegisterUser)
 
 	// 用户详情
-	g.GET("/users/:id", c.HandleGetUserInfo)
+	g.GET("/users/:openid", c.HandleGetUserInfo)
 
 	// 充值
-	g.POST("/users/:id/balance", c.HandleBalance)
+	g.POST("/users/:openid/balance", c.HandleBalance)
+}
+
+func (c *Ctl) HandleLogin(ctx *gin.Context) {
+
+	req := &ReqLogin{}
+	code := ctx.Query("code")
+	if len(code) == 0 {
+		err := fmt.Errorf("not found login code")
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	role := ctx.Query("role")
+	if len(role) == 0 {
+		err := fmt.Errorf("not found role")
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	rd, err := strconv.Atoi(role)
+	if rd == 0 {
+		err := fmt.Errorf("invalid role")
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	openID, err := c.Login(code, model.Role(rd))
+	if err != nil {
+		c.Errorf("login failed, err=%s", err.Error())
+		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, &RespLogin{
+		RespBase: req.GenResponse(err),
+		OpenID:   openID,
+	})
 }
 
 func (c *Ctl) HandleRegisterUser(ctx *gin.Context) {
@@ -105,14 +158,14 @@ func (c *Ctl) HandleBalance(ctx *gin.Context) {
 
 	req := &ReqHandleBalance{}
 
-	sid := ctx.DefaultQuery("id", "0")
+	sid := ctx.Param("id")
 	id, err := strconv.Atoi(sid)
 	if err != nil {
 		c.Errorf("parsing request failed, err=%s", err.Error())
 		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
 	}
 
-	err = c.DoManageBalance(uint32(id), req.TradeType, req.Amount, req.TradeID)
+	err = c.DoManageBalance(uint(id), req.TradeType, req.Amount, req.TradeID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
 		return
@@ -125,14 +178,14 @@ func (c *Ctl) HandleGetUserInfo(ctx *gin.Context) {
 
 	req := &ReqGetUserInfo{}
 
-	sid := ctx.DefaultQuery("id", "0")
-	id, err := strconv.Atoi(sid)
-	if err != nil {
+	openID := ctx.Param("openid")
+	if len(openID) == 0 {
+		err := fmt.Errorf("invalid openid")
 		c.Errorf("parsing request failed, err=%s", err.Error())
 		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
 	}
 
-	user, err := c.GetUser(uint32(id))
+	user, err := c.GetUserByOpenID(openID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
 		return
@@ -140,7 +193,7 @@ func (c *Ctl) HandleGetUserInfo(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, &RespGetUserInfo{
 		RespBase: req.GenResponse(err),
-		Info:     user,
+		Info:     user.User,
 	})
 }
 

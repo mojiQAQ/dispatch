@@ -2,39 +2,43 @@ package order
 
 import (
 	"fmt"
+	"gorm.io/gorm"
 	"strconv"
 	"strings"
-	"time"
-
-	"gorm.io/gorm"
 
 	"github.com/mojiQAQ/dispatch/model"
 )
 
-func (c *Ctl) GetOrders(ss, sid, sp string) ([]*model.TMasterOrder, error) {
-
-	state, err := strconv.Atoi(ss)
-	if err != nil {
-		return nil, err
-	}
-
-	userID, err := strconv.Atoi(sid)
-	if err != nil {
-		return nil, err
-	}
-
-	platform, err := strconv.Atoi(sp)
-	if err != nil {
-		return nil, err
-	}
+func (c *Ctl) GetOrders(sStates, openID, sPlatform string) ([]*model.TMasterOrder, error) {
 
 	expr := make([]string, 0)
-	if state != 0 {
-		expr = append(expr, fmt.Sprintf("state = %d", state))
+	if len(sStates) != 0 {
+		states := strings.Split(sStates, ",")
+		iStates := make([]int, 0)
+		for _, state := range states {
+			s, err := strconv.Atoi(state)
+			if err != nil {
+				return nil, err
+			}
+			iStates = append(iStates, s)
+		}
+
+		if len(iStates) != 0 {
+			expr = append(expr, fmt.Sprintf("state in (%s)", sStates))
+		}
 	}
 
-	if userID != 0 {
-		expr = append(expr, fmt.Sprintf("user_id = %d", userID))
+	platform, err := strconv.Atoi(sPlatform)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(openID) != 0 {
+		user, err := c.uc.GetUserByOpenID(openID)
+		if err != nil {
+			return nil, err
+		}
+		expr = append(expr, fmt.Sprintf("user_id = %d", user.ID))
 	}
 
 	if platform != 0 {
@@ -57,7 +61,7 @@ func (c *Ctl) GetOrder(id uint) (*model.TMasterOrder, error) {
 func (c *Ctl) GetMasterOrders(condition string, args ...interface{}) ([]*model.TMasterOrder, error) {
 
 	orders := make([]*model.TMasterOrder, 0)
-	err := c.db.Model(model.TMasterOrder{}).Where(condition, args...).Find(orders).Error
+	err := c.db.Model(model.TMasterOrder{}).Where(condition, args...).Order("id desc").Find(&orders).Error
 	if err != nil {
 		return nil, err
 	}
@@ -66,13 +70,19 @@ func (c *Ctl) GetMasterOrders(condition string, args ...interface{}) ([]*model.T
 }
 
 // CreateMasterOrder 创建订单
-func (c *Ctl) CreateMasterOrder(order *model.MasterOrder) (*model.TMasterOrder, error) {
+func (c *Ctl) CreateMasterOrder(order *model.MasterOrder, openID string) (*model.TMasterOrder, error) {
 
-	order.State = model.MOrderStateInit
+	user, err := c.uc.GetUserByOpenID(openID)
+	if err != nil {
+		return nil, err
+	}
+
+	order.State = model.MOrderStateCreated
 	order.UUID = GenerateUUID()
+	order.UserID = user.ID
 
 	tOrder := &model.TMasterOrder{MasterOrder: order}
-	err := c.db.Create(tOrder).Error
+	err = c.db.Create(tOrder).Error
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +99,7 @@ func (c *Ctl) ModifyMasterOrder(id uint, order *model.MasterOrder) (*model.TMast
 	}
 
 	// 仅初始化状态的订单可以修改订单内容
-	if oldOrder.State != model.MOrderStateInit {
+	if oldOrder.State != model.MOrderStateCreated {
 		return nil, fmt.Errorf("not allow modify order")
 	}
 
@@ -102,26 +112,10 @@ func (c *Ctl) ModifyMasterOrder(id uint, order *model.MasterOrder) (*model.TMast
 	return tOrder, nil
 }
 
-// chaneOrderState 修改订单状态
-func (c *Ctl) chaneOrderState(tx *gorm.DB, id uint, state model.OrderState) error {
+// changeOrderState 修改订单状态
+func (c *Ctl) changeOrderState(tx *gorm.DB, id uint, state model.OrderState) error {
 
 	return tx.Model(model.TMasterOrder{}).Where("id = ?", id).Update("state", state).Error
-}
-
-func (c *Ctl) SubmitMasterOrder(id uint) error {
-
-	order, err := c.GetOrder(id)
-	if err != nil {
-		return err
-	}
-
-	// 仅初始化状态的订单可以被提交，提交后不可以修改
-	if order.State != model.MOrderStateInit {
-		return fmt.Errorf("only init order can be submit")
-	}
-
-	// 提交订单
-	return c.chaneOrderState(c.db, id, model.MOrderStateCreated)
 }
 
 // PayForMasterOrder 支付订单
@@ -155,7 +149,7 @@ func (c *Ctl) PayForMasterOrder(id uint) error {
 	}
 
 	// 更新订单状态为进行中
-	err = c.chaneOrderState(tx, id, model.MOrderStateDoing)
+	err = c.changeOrderState(tx, id, model.MOrderStateDoing)
 	if err != nil {
 		return err
 	}
@@ -164,16 +158,14 @@ func (c *Ctl) PayForMasterOrder(id uint) error {
 	return tx.Commit().Error
 }
 
-// PublishMasterOrder 发布订单，包含提交订单和支付订单两步
-func (c *Ctl) PublishMasterOrder(id uint) error {
-
-	err := c.SubmitMasterOrder(id)
+func (c *Ctl) PublishOrder(order *model.MasterOrder, openID string) (*model.TMasterOrder, error) {
+	o, err := c.CreateMasterOrder(order, openID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// 支付订单
-	return c.PayForMasterOrder(id)
+	err = c.PayForMasterOrder(o.ID)
+	return o, err
 }
 
 func (c *Ctl) CreateSubOrder(mid uint, req *ReqCreateSubOrder) (*model.TSubOrder, error) {
@@ -197,11 +189,10 @@ func (c *Ctl) CreateSubOrder(mid uint, req *ReqCreateSubOrder) (*model.TSubOrder
 	}
 
 	sOrder := &model.SubOrder{
-		UUID:     GenerateUUID(),
-		MID:      mOrder.UUID,
-		UserID:   req.UserID,
-		State:    model.SOrderStateAccept,
-		FinishAt: time.Time{},
+		UUID:   GenerateUUID(),
+		MID:    mOrder.ID,
+		UserID: req.UserID,
+		State:  model.SOrderStateAccept,
 	}
 
 	tSOrder := &model.TSubOrder{SubOrder: sOrder}
@@ -216,7 +207,7 @@ func (c *Ctl) CreateSubOrder(mid uint, req *ReqCreateSubOrder) (*model.TSubOrder
 func (c *Ctl) GetSubOrders(mid uint) ([]*model.TSubOrder, error) {
 
 	sOrders := make([]*model.TSubOrder, 0)
-	err := c.db.Model(model.TSubOrder{}).Where("m_order_id = ?", mid).Find(sOrders).Error
+	err := c.db.Model(model.TSubOrder{}).Where("mid = ?", mid).Find(&sOrders).Error
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +302,7 @@ func (c *Ctl) ApproveSubOrder(mid, sid uint) error {
 	return tx.Commit().Error
 }
 
-func (c *Ctl) ReviewSubOrder(mid, sid uint, auditorID uint32, state model.OrderState) error {
+func (c *Ctl) ReviewSubOrder(mid, sid uint, auditorID uint, state model.OrderState) error {
 
 	// 查询审核人信息
 	auditor, err := c.uc.GetUser(auditorID)

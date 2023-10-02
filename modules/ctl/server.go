@@ -2,6 +2,7 @@ package ctl
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -32,10 +33,12 @@ func NewServer() *Server {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	srv := &Server{
-		ctx:         ctx,
-		cancel:      cancel,
-		Application: &app.Application{},
-		cfg:         &model.Config{},
+		ctx:    ctx,
+		cancel: cancel,
+		Application: &app.Application{
+			ConfPath: "cmd",
+		},
+		cfg: &model.Config{},
 	}
 	return srv
 }
@@ -50,10 +53,10 @@ func (s *Server) Init() {
 		return
 	}
 
-	s.h = gin.New()
+	s.h = gin.Default()
 	s.Http = &http.Server{Handler: s.h}
 
-	s.UC = user.NewCtl(s.Logger, s.Database.Write, trade.NewCtl())
+	s.UC = user.NewCtl(s.Logger, s.Database.Write, trade.NewCtl(), s.HttpClient(), s.cfg.WXAuth)
 	s.OC = order.NewCtl(s.Logger, s.Database.Write, s.UC)
 
 	s.InitRouter()
@@ -72,6 +75,13 @@ func (s *Server) Start() {
 		panic(err)
 	}
 
+	go func() {
+		err = s.h.RunTLS(fmt.Sprintf("%s:%d", s.LocalIPStr, s.cfg.HTTPSServer.Port),
+			s.cfg.HTTPSServer.Cert, s.cfg.HTTPSServer.Key)
+		if err != nil {
+			panic(err)
+		}
+	}()
 	s.OC.Start()
 }
 

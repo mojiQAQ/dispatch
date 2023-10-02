@@ -3,9 +3,9 @@ package order
 import (
 	"time"
 
-	"git.ucloudadmin.com/unetworks/app/pkg/log"
 	"gorm.io/gorm"
 
+	"git.ucloudadmin.com/unetworks/app/pkg/log"
 	"github.com/mojiQAQ/dispatch/model"
 	"github.com/mojiQAQ/dispatch/modules/user"
 )
@@ -28,17 +28,22 @@ func NewCtl(logger *log.Logger, db *gorm.DB, uc *user.Ctl) *Ctl {
 
 func (c *Ctl) Start() {
 
-	ticker := time.NewTimer(time.Second * 30)
+	ticker := time.NewTicker(time.Second * 10)
 
-	for {
-		select {
-		case <-ticker.C:
-			c.checkOrder()
+	go func() {
+		for {
+			c.Debugf("====")
+			select {
+			case <-ticker.C:
+				c.Debugf("time to check order")
+				go c.checkOrder()
+				go c.checkUnPayOrder()
+			}
 		}
-	}
+	}()
 }
 
-func (c *Ctl) checkOrder() {
+func (c *Ctl) checkUnPayOrder() {
 
 	orders, err := c.GetMasterOrders("state = ?", model.MOrderStateCreated)
 	if err != nil {
@@ -49,7 +54,7 @@ func (c *Ctl) checkOrder() {
 		// 如果订单处于待支付状态 10 分钟，则自动取消
 		if order.State == model.MOrderStateCreated {
 			if time.Now().Sub(order.UpdatedAt).Minutes() >= 10 {
-				err = c.chaneOrderState(c.db, order.ID, model.MOrderStateCancel)
+				err = c.changeOrderState(c.db, order.ID, model.MOrderStateCancel)
 				if err != nil {
 					c.Errorf("cancel timeout order failed, uuid=%s, err=%v", order.UUID, err)
 					continue
@@ -71,6 +76,27 @@ func (c *Ctl) checkOrder() {
 						continue
 					}
 				}
+			}
+		}
+	}
+}
+
+func (c *Ctl) checkOrder() {
+
+	orders, err := c.GetMasterOrders("state = ?", model.MOrderStateDoing)
+	if err != nil {
+		return
+	}
+
+	for _, order := range orders {
+		// 如果订单处于待支付状态 10 分钟，则自动取消
+		c.Debugf("now: %v, finish: %v", time.Now(), order.FinishAt)
+		if time.Now().After(order.FinishAt) {
+			c.Infof("update finish order")
+			err = c.changeOrderState(c.db, order.ID, model.MOrderStateFinish)
+			if err != nil {
+				c.Errorf("cancel timeout order failed, uuid=%s, err=%v", order.UUID, err)
+				continue
 			}
 		}
 	}

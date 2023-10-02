@@ -14,7 +14,7 @@ func NewCtl() *Ctl {
 	return &Ctl{}
 }
 
-func (c *Ctl) AddTransactionRecord(db *gorm.DB, userID uint32, Type model.TradeType, amount float64, TradeID string) error {
+func (c *Ctl) AddTransactionRecord(db *gorm.DB, userID uint, Type model.TradeType, amount float64, TradeID string) error {
 
 	record := &model.TTradeRecord{
 		TradeID: TradeID,

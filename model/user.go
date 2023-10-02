@@ -9,13 +9,13 @@ type (
 	}
 
 	User struct {
-		Role        Role    // 用户角色
-		Balance     float64 // 余额
-		PhoneNumber string  // 电话号码
-		WxID        string  // 微信 ID
+		Role    Role    `gorm:"column:role" json:"role"`       // 用户角色
+		Balance float64 `gorm:"column:balance" json:"balance"` // 余额
+		Phone   string  `gorm:"column:phone" json:"phone"`     // 电话号码
+		OpenID  string  `gorm:"column:openid" json:"openid"`   // 微信 OpenID
 	}
 
-	Role int64
+	Role int
 )
 
 const (

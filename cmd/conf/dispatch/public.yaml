@@ -16,3 +16,12 @@ Database:
   Read:
     Addr: "root:root@tcp(127.0.0.1:3306)/dispatch?charset=utf8&parseTime=true&loc=Local"
     PoolSize: 50
+
+HTTPSServer:
+  Port: 7443
+  Cert: server.crt
+  Key: server.key
+WXAuth:
+  URL: https://api.weixin.qq.com/sns/jscode2session
+  APPID: wx6779ff6c8a581fa8
+  Secret: 326ebfde76a1074e4acaeb0ed3fa1470

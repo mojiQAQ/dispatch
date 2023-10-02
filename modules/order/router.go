@@ -61,7 +61,7 @@ type (
 
 	ReqCreateSubOrder struct {
 		*model.ReqBase
-		UserID uint32 `json:"user_id"`
+		UserID uint `json:"user_id"`
 	}
 
 	RespCreateSubOrder struct {
@@ -100,7 +100,7 @@ type (
 
 	ReqReviewSubOrders struct {
 		*model.ReqBase
-		AuditorID uint32           `json:"auditor_id"`
+		AuditorID uint             `json:"auditor_id"`
 		State     model.OrderState `json:"state"`
 	}
 
@@ -114,8 +114,8 @@ func (c *Ctl) InitRouter(g *gin.RouterGroup) {
 	// 查询订单
 	g.GET("/orders", c.HandleGetOrders)
 
-	// 创建订单
-	g.POST("/orders", c.HandleCreateMasterOrder)
+	// 发布订单（创建并支付）
+	g.POST("/orders", c.HandlePublishMasterOrder)
 
 	// 查询订单详情
 	g.GET("/orders/:id", c.HandleGetOrderInfo)
@@ -123,8 +123,8 @@ func (c *Ctl) InitRouter(g *gin.RouterGroup) {
 	// 修改订单
 	g.PUT("/orders/:id", c.HandleModifyOrder)
 
-	// 操作订单，action=submit/pay/publish(submit+pay)
-	g.POST("/orders/:id", c.HandleOperateOrder)
+	// 支付订单
+	g.POST("/orders/:id", c.HandlePayOrder)
 
 	// 创建子订
 	g.POST("/orders/:id/sub_orders", c.HandleCreateSubOrder)
@@ -138,9 +138,6 @@ func (c *Ctl) InitRouter(g *gin.RouterGroup) {
 	// 提交子订单
 	g.POST("/orders/:id/sub_orders/:sid", c.HandleSubmitSubOrder)
 
-	// 修改子订单
-	g.PUT("/orders/:id/sub_orders/:sid", c.HandleReviewSubOrder)
-
 	// 审核子订单
 	g.PUT("/orders/:id/sub_orders/:sid", c.HandleReviewSubOrder)
 }
@@ -149,11 +146,19 @@ func (c *Ctl) HandleGetOrders(ctx *gin.Context) {
 
 	req := &ReqGetMasterOrders{}
 
-	ss := ctx.Param("state")
-	sid := ctx.Param("user_id")
-	sp := ctx.Param("platform")
-	orders, err := c.GetOrders(ss, sid, sp)
+	openid := ctx.Query("openid")
+	if len(openid) == 0 {
+		err := fmt.Errorf("invalid openid: %s", openid)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	state := ctx.Query("state")
+	platform := ctx.DefaultQuery("platform", "0")
+	orders, err := c.GetOrders(state, openid, platform)
 	if err != nil {
+		c.Errorf("get orders failed, err=%v", err)
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
 		return
 	}
@@ -164,9 +169,17 @@ func (c *Ctl) HandleGetOrders(ctx *gin.Context) {
 	})
 }
 
-func (c *Ctl) HandleCreateMasterOrder(ctx *gin.Context) {
+func (c *Ctl) HandlePublishMasterOrder(ctx *gin.Context) {
 
 	req := &ReqCreateMasterOrder{}
+	openID := ctx.Query("openid")
+	if len(openID) == 0 {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
 	err := ctx.ShouldBindBodyWith(req, binding.JSON)
 	if err != nil {
 		c.Errorf("parsing request failed, err=%s", err.Error())
@@ -181,9 +194,12 @@ func (c *Ctl) HandleCreateMasterOrder(ctx *gin.Context) {
 		return
 	}
 
-	order, err := c.CreateMasterOrder(req.MasterOrder)
+	order, err := c.PublishOrder(req.MasterOrder, openID)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
+		ctx.JSON(http.StatusInternalServerError, &RespCreateMasterOrder{
+			RespBase: req.GenResponse(err),
+			Order:    order,
+		})
 		return
 	}
 
@@ -196,8 +212,15 @@ func (c *Ctl) HandleCreateMasterOrder(ctx *gin.Context) {
 func (c *Ctl) HandleGetOrderInfo(ctx *gin.Context) {
 
 	req := &ReqGetMasterOrder{}
+	openID := ctx.Query("openid")
+	if len(openID) == 0 {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
 
-	sid := ctx.Query("id")
+	sid := ctx.Param("id")
 	id, err := strconv.Atoi(sid)
 	if err != nil {
 		c.Errorf("request params invalid, err=%s", err.Error())
@@ -220,7 +243,23 @@ func (c *Ctl) HandleGetOrderInfo(ctx *gin.Context) {
 func (c *Ctl) HandleModifyOrder(ctx *gin.Context) {
 
 	req := &ReqModifyMasterOrder{}
-	err := ctx.ShouldBindBodyWith(req, binding.JSON)
+	openID := ctx.Query("openid")
+	if len(openID) == 0 {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	_, err := c.uc.GetUserByOpenID(openID)
+	if err != nil {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	err = ctx.ShouldBindBodyWith(req, binding.JSON)
 	if err != nil {
 		c.Errorf("parsing request failed, err=%s", err.Error())
 		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
@@ -234,7 +273,7 @@ func (c *Ctl) HandleModifyOrder(ctx *gin.Context) {
 		return
 	}
 
-	sid := ctx.Query("id")
+	sid := ctx.Param("id")
 	id, err := strconv.Atoi(sid)
 	if err != nil {
 		c.Errorf("request params invalid, err=%s", err.Error())
@@ -254,11 +293,25 @@ func (c *Ctl) HandleModifyOrder(ctx *gin.Context) {
 	})
 }
 
-func (c *Ctl) HandleOperateOrder(ctx *gin.Context) {
+func (c *Ctl) HandlePayOrder(ctx *gin.Context) {
 
 	req := &ReqOperateMasterOrder{}
+	openID := ctx.Query("openid")
+	if len(openID) == 0 {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+	_, err := c.uc.GetUserByOpenID(openID)
+	if err != nil {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
 
-	sid := ctx.Query("id")
+	sid := ctx.Param("id")
 	id, err := strconv.Atoi(sid)
 	if err != nil {
 		c.Errorf("request params invalid, err=%s", err.Error())
@@ -266,21 +319,7 @@ func (c *Ctl) HandleOperateOrder(ctx *gin.Context) {
 		return
 	}
 
-	action := ctx.Param("action")
-	switch action {
-	case "submit":
-		err = c.SubmitMasterOrder(uint(id))
-	case "pay":
-		err = c.PayForMasterOrder(uint(id))
-	case "publish":
-		err = c.PublishMasterOrder(uint(id))
-	default:
-		msg := "request params action invalid, only submit/pay/publish"
-		c.Errorf(msg)
-		ctx.JSON(http.StatusBadRequest, req.GenResponse(fmt.Errorf(msg)))
-		return
-	}
-
+	err = c.PayForMasterOrder(uint(id))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
 		return
