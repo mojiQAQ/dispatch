@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"gorm.io/gorm"
 
@@ -227,6 +228,10 @@ func (c *Ctl) login(code string) (*AuthKey, error) {
 	err = json.Unmarshal(resp.Body, authkey)
 	if err != nil {
 		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf(authkey.ErrMsg)
 	}
 
 	return authkey, nil

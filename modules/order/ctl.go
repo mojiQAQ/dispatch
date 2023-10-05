@@ -32,12 +32,12 @@ func (c *Ctl) Start() {
 
 	go func() {
 		for {
-			c.Debugf("====")
 			select {
 			case <-ticker.C:
 				c.Debugf("time to check order")
-				go c.checkOrder()
+				go c.checkFinishOrder()
 				go c.checkUnPayOrder()
+				//go c.checkAcceptOrder()
 			}
 		}
 	}()
@@ -61,27 +61,10 @@ func (c *Ctl) checkUnPayOrder() {
 				}
 			}
 		}
-
-		subOrders, err := c.GetSubOrders(order.ID)
-		if err != nil {
-			return
-		}
-
-		for _, so := range subOrders {
-			if so.State == model.SOrderStateAccept {
-				if time.Now().Sub(so.CreatedAt).Minutes() >= 10 {
-					err = c.changeSubOrderState(c.db, so.ID, model.SOrderStateTimeout)
-					if err != nil {
-						c.Errorf("set timeout sub order failed, uuid=%s, err=%v", order.UUID, err)
-						continue
-					}
-				}
-			}
-		}
 	}
 }
 
-func (c *Ctl) checkOrder() {
+func (c *Ctl) checkFinishOrder() {
 
 	orders, err := c.GetMasterOrders("state = ?", model.MOrderStateDoing)
 	if err != nil {
@@ -96,6 +79,24 @@ func (c *Ctl) checkOrder() {
 			err = c.changeOrderState(c.db, order.ID, model.MOrderStateFinish)
 			if err != nil {
 				c.Errorf("cancel timeout order failed, uuid=%s, err=%v", order.UUID, err)
+				continue
+			}
+		}
+	}
+}
+
+func (c *Ctl) checkAcceptOrder() {
+
+	subOrders, err := c.GetSubOrdersPlus(0, 0, []string{"1"})
+	if err != nil {
+		return
+	}
+
+	for _, so := range subOrders {
+		if time.Now().Sub(so.CreatedAt).Minutes() >= 10 {
+			err = c.changeSubOrderState(c.db, so.ID, model.SOrderStateTimeout)
+			if err != nil {
+				c.Errorf("set timeout sub order failed, uuid=%s, err=%v", so.UUID, err)
 				continue
 			}
 		}

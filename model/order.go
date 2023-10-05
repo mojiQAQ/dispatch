@@ -60,6 +60,9 @@ const (
 	MOrderStateDone                          // 已完成：在订单截止时间所有接单人都已完成
 	MOrderStateFinish                        // 已结束：在订单截止时间未全部完成
 
+)
+
+const (
 	/*
 			             Accept
 						   |
@@ -69,13 +72,14 @@ const (
 			｜		   / \
 		     -----Reject   Complete
 	*/
+	SOrderStateAccept   OrderState = iota + 1 // 已接受
+	SOrderStateSubmit                         // 已提交
+	SOrderStateTimeout                        // 超时取消
+	SOrderStateComplete                       // 已完成
+	SOrderStateReject                         // 驳回
+)
 
-	SOrderStateAccept   OrderState = iota + 10 // 已接受
-	SOrderStateSubmit                          // 已提交
-	SOrderStateTimeout                         // 超时取消
-	SOrderStateComplete                        // 已完成
-	SOrderStateReject                          // 驳回
-
+const (
 	PlatformTB Platform = iota + 1 // 淘宝
 	PlatformTM                     // 天猫
 	PlatformJD                     // 京东

@@ -3,42 +3,20 @@ package order
 import (
 	"fmt"
 	"gorm.io/gorm"
-	"strconv"
 	"strings"
 
 	"github.com/mojiQAQ/dispatch/model"
 )
 
-func (c *Ctl) GetOrders(sStates, openID, sPlatform string) ([]*model.TMasterOrder, error) {
+func (c *Ctl) GetOrders(states []string, userID, platform uint) ([]*model.TMasterOrder, error) {
 
 	expr := make([]string, 0)
-	if len(sStates) != 0 {
-		states := strings.Split(sStates, ",")
-		iStates := make([]int, 0)
-		for _, state := range states {
-			s, err := strconv.Atoi(state)
-			if err != nil {
-				return nil, err
-			}
-			iStates = append(iStates, s)
-		}
-
-		if len(iStates) != 0 {
-			expr = append(expr, fmt.Sprintf("state in (%s)", sStates))
-		}
+	if len(states) != 0 {
+		expr = append(expr, fmt.Sprintf("state in (%s)", strings.Join(states, ",")))
 	}
 
-	platform, err := strconv.Atoi(sPlatform)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(openID) != 0 {
-		user, err := c.uc.GetUserByOpenID(openID)
-		if err != nil {
-			return nil, err
-		}
-		expr = append(expr, fmt.Sprintf("user_id = %d", user.ID))
+	if userID != 0 {
+		expr = append(expr, fmt.Sprintf("user_id = %d", userID))
 	}
 
 	if platform != 0 {
@@ -168,7 +146,16 @@ func (c *Ctl) PublishOrder(order *model.MasterOrder, openID string) (*model.TMas
 	return o, err
 }
 
-func (c *Ctl) CreateSubOrder(mid uint, req *ReqCreateSubOrder) (*model.TSubOrder, error) {
+func (c *Ctl) CreateSubOrder(mid uint, userID uint) (*model.TSubOrder, error) {
+
+	user, err := c.uc.GetUser(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if user.Role != model.RoleWorker {
+		return nil, fmt.Errorf("该用户不准接单")
+	}
 
 	mOrder, err := c.GetOrder(mid)
 	if err != nil {
@@ -176,43 +163,72 @@ func (c *Ctl) CreateSubOrder(mid uint, req *ReqCreateSubOrder) (*model.TSubOrder
 	}
 
 	if mOrder.State != model.MOrderStateDoing {
-		return nil, fmt.Errorf("only ")
+		return nil, fmt.Errorf("订单已失效")
 	}
 
-	subOrders, err := c.GetSubOrders(mid)
+	subOrders, err := c.GetAllSubOrders(mid)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(subOrders) >= int(mOrder.Total) {
-		return nil, fmt.Errorf("sub order is enough")
+		return nil, fmt.Errorf("订单已分配完成")
 	}
 
 	sOrder := &model.SubOrder{
 		UUID:   GenerateUUID(),
 		MID:    mOrder.ID,
-		UserID: req.UserID,
+		UserID: userID,
 		State:  model.SOrderStateAccept,
 	}
 
 	tSOrder := &model.TSubOrder{SubOrder: sOrder}
 	err = c.db.Model(model.TSubOrder{}).Create(tSOrder).Error
 	if err != nil {
+		if strings.Contains(err.Error(), "Error 1062: Duplicate entry") {
+			return nil, fmt.Errorf("订单已接受")
+		}
 		return nil, err
 	}
 
 	return tSOrder, nil
 }
 
-func (c *Ctl) GetSubOrders(mid uint) ([]*model.TSubOrder, error) {
+func (c *Ctl) GetSubOrdersPlus(mid, userID uint, states []string) ([]*model.TSubOrder, error) {
+	expr := make([]string, 0)
+	args := make([]interface{}, 0)
+	if userID != 0 {
+		expr = append(expr, "user_id = ?")
+		args = append(args, userID)
+	}
+
+	if mid != 0 {
+		expr = append(expr, "mid = ?")
+		args = append(args, mid)
+	}
+
+	if len(states) != 0 {
+		expr = append(expr, "state in (?)")
+		args = append(args, strings.Join(states, ","))
+	}
+
+	return c.getSubOrders(strings.Join(expr, " AND "), args...)
+}
+
+func (c *Ctl) getSubOrders(condition string, args ...interface{}) ([]*model.TSubOrder, error) {
 
 	sOrders := make([]*model.TSubOrder, 0)
-	err := c.db.Model(model.TSubOrder{}).Where("mid = ?", mid).Find(&sOrders).Error
+	err := c.db.Model(model.TSubOrder{}).Where(condition, args...).Find(&sOrders).Error
 	if err != nil {
 		return nil, err
 	}
 
 	return sOrders, nil
+}
+
+func (c *Ctl) GetAllSubOrders(mid uint) ([]*model.TSubOrder, error) {
+
+	return c.getSubOrders("mid = ?", mid)
 }
 
 func (c *Ctl) GetSubOrderInfo(mid, sid uint) (*model.TSubOrder, error) {
@@ -235,7 +251,8 @@ func (c *Ctl) SubmitSubOrder(mid, sid uint, req *ReqSubmitSubOrders) error {
 	}
 
 	// 检查子订单是否允许提交
-	if order.State != model.SOrderStateAccept && order.State != model.SOrderStateReject {
+	if order.State != model.SOrderStateAccept && order.State != model.SOrderStateReject &&
+		order.State != model.SOrderStateSubmit {
 		return fmt.Errorf("the sub order state only accept and reject can be submit")
 	}
 

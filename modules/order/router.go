@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	valid "github.com/asaskevich/govalidator"
 	"github.com/gin-gonic/gin"
@@ -22,6 +23,20 @@ type (
 		Orders []*model.TMasterOrder `json:"orders"`
 	}
 
+	ReqGetAllMasterOrders struct {
+		*model.ReqBase
+	}
+
+	Order struct {
+		*model.TMasterOrder
+		Accepted bool `json:"accepted"`
+	}
+
+	RespGetAllMasterOrders struct {
+		*model.RespBase
+		Orders []*Order `json:"orders"`
+	}
+
 	ReqCreateMasterOrder struct {
 		*model.ReqBase
 		*model.MasterOrder
@@ -38,7 +53,7 @@ type (
 
 	RespGetMasterOrder struct {
 		*model.RespBase
-		Order *model.MasterOrder `json:"order"`
+		Order *Order `json:"order,omitempty"`
 	}
 
 	ReqModifyMasterOrder struct {
@@ -61,7 +76,6 @@ type (
 
 	ReqCreateSubOrder struct {
 		*model.ReqBase
-		UserID uint `json:"user_id"`
 	}
 
 	RespCreateSubOrder struct {
@@ -90,7 +104,6 @@ type (
 
 	ReqSubmitSubOrders struct {
 		*model.ReqBase
-		UserID  uint32 `json:"user_id"`
 		Context string `json:"context"`
 	}
 
@@ -107,12 +120,29 @@ type (
 	RespReviewSubOrders struct {
 		*model.RespBase
 	}
+
+	ReqGetUserSubOrders struct {
+		*model.ReqBase
+	}
+
+	SubOrder struct {
+		*model.TSubOrder
+		MOrder *model.TMasterOrder `json:"m_order"`
+	}
+
+	RespGetUserSubOrders struct {
+		*model.RespBase
+		SubOrders []*SubOrder `json:"sub_orders"`
+	}
 )
 
 func (c *Ctl) InitRouter(g *gin.RouterGroup) {
 
-	// 查询订单
+	// 查询订单(商家用)
 	g.GET("/orders", c.HandleGetOrders)
+
+	// 查询全部订单(用户用)
+	g.GET("/all_orders", c.HandleAllGetOrders)
 
 	// 发布订单（创建并支付）
 	g.POST("/orders", c.HandlePublishMasterOrder)
@@ -126,8 +156,11 @@ func (c *Ctl) InitRouter(g *gin.RouterGroup) {
 	// 支付订单
 	g.POST("/orders/:id", c.HandlePayOrder)
 
-	// 创建子订
+	// 创建子订单(接受订单)
 	g.POST("/orders/:id/sub_orders", c.HandleCreateSubOrder)
+
+	// 获取用户所有子订单(接单员)
+	g.GET("/sub_orders", c.HandleGetUserSubOrders)
 
 	// 查询子订单列表
 	g.GET("/orders/:id/sub_orders", c.HandleGetSubOrders)
@@ -154,9 +187,30 @@ func (c *Ctl) HandleGetOrders(ctx *gin.Context) {
 		return
 	}
 
+	user, err := c.uc.GetUserByOpenID(openid)
+	if err != nil {
+		err := fmt.Errorf("invalid openid: %s", openid)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	states := make([]string, 0)
 	state := ctx.Query("state")
+	if len(state) != 0 {
+		states = strings.Split(state, ",")
+	}
+
 	platform := ctx.DefaultQuery("platform", "0")
-	orders, err := c.GetOrders(state, openid, platform)
+	pid, err := strconv.Atoi(platform)
+	if err != nil {
+		err := fmt.Errorf("invalid platform: %s", openid)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	orders, err := c.GetOrders(states, user.ID, uint(pid))
 	if err != nil {
 		c.Errorf("get orders failed, err=%v", err)
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
@@ -166,6 +220,80 @@ func (c *Ctl) HandleGetOrders(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, &RespGetMasterOrders{
 		RespBase: req.GenResponse(err),
 		Orders:   orders,
+	})
+}
+
+func (c *Ctl) HandleAllGetOrders(ctx *gin.Context) {
+
+	req := &ReqGetAllMasterOrders{}
+
+	openid := ctx.Query("openid")
+	if len(openid) == 0 {
+		err := fmt.Errorf("invalid openid: %s", openid)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	user, err := c.uc.GetUserByOpenID(openid)
+	if err != nil {
+		err := fmt.Errorf("invalid openid: %s", openid)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	states := make([]string, 0)
+	state := ctx.Query("state")
+	if len(state) != 0 {
+		states = strings.Split(state, ",")
+	}
+
+	platform := ctx.DefaultQuery("platform", "0")
+	pid, err := strconv.Atoi(platform)
+	if err != nil {
+		err := fmt.Errorf("invalid platform: %s", openid)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	orders, err := c.GetOrders(states, 0, uint(pid))
+	if err != nil {
+		c.Errorf("get orders failed, err=%v", err)
+		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
+		return
+	}
+
+	subOrders, err := c.GetSubOrdersPlus(0, user.ID, []string{})
+	if err != nil {
+		c.Errorf("get sub_orders failed, err=%v", err)
+		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
+		return
+	}
+
+	acceptOrder := make(map[uint]struct{})
+	for _, subOrder := range subOrders {
+		acceptOrder[subOrder.MID] = struct{}{}
+	}
+
+	allOrders := make([]*Order, 0)
+	for _, order := range orders {
+		newOrder := &Order{
+			TMasterOrder: order,
+			Accepted:     false,
+		}
+
+		if _, ok := acceptOrder[order.ID]; ok {
+			newOrder.Accepted = true
+		}
+
+		allOrders = append(allOrders, newOrder)
+	}
+
+	ctx.JSON(http.StatusOK, &RespGetAllMasterOrders{
+		RespBase: req.GenResponse(err),
+		Orders:   allOrders,
 	})
 }
 
@@ -220,6 +348,14 @@ func (c *Ctl) HandleGetOrderInfo(ctx *gin.Context) {
 		return
 	}
 
+	user, err := c.uc.GetUserByOpenID(openID)
+	if err != nil {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
 	sid := ctx.Param("id")
 	id, err := strconv.Atoi(sid)
 	if err != nil {
@@ -234,9 +370,31 @@ func (c *Ctl) HandleGetOrderInfo(ctx *gin.Context) {
 		return
 	}
 
+	info := &Order{
+		TMasterOrder: order,
+	}
+
+	if user.Role == model.RoleWorker {
+		subOrders, err := c.GetSubOrdersPlus(order.ID, user.ID, []string{})
+		if err != nil {
+			c.Errorf("get sub_orders failed, err=%v", err)
+			ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
+			return
+		}
+
+		acceptOrder := make(map[uint]struct{})
+		for _, subOrder := range subOrders {
+			acceptOrder[subOrder.MID] = struct{}{}
+		}
+
+		if _, ok := acceptOrder[info.ID]; ok {
+			info.Accepted = true
+		}
+	}
+
 	ctx.JSON(http.StatusOK, &RespGetMasterOrder{
 		RespBase: req.GenResponse(err),
-		Order:    order.MasterOrder,
+		Order:    info,
 	})
 }
 
@@ -333,7 +491,22 @@ func (c *Ctl) HandlePayOrder(ctx *gin.Context) {
 func (c *Ctl) HandleCreateSubOrder(ctx *gin.Context) {
 
 	req := &ReqCreateSubOrder{}
-	err := ctx.ShouldBindBodyWith(req, binding.JSON)
+	openID := ctx.Query("openid")
+	if len(openID) == 0 {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+	user, err := c.uc.GetUserByOpenID(openID)
+	if err != nil {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	err = ctx.ShouldBindBodyWith(req, binding.JSON)
 	if err != nil {
 		c.Errorf("parsing request failed, err=%s", err.Error())
 		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
@@ -347,7 +520,7 @@ func (c *Ctl) HandleCreateSubOrder(ctx *gin.Context) {
 		return
 	}
 
-	sid := ctx.Query("id")
+	sid := ctx.Param("id")
 	id, err := strconv.Atoi(sid)
 	if err != nil {
 		c.Errorf("request params invalid, err=%s", err.Error())
@@ -355,7 +528,7 @@ func (c *Ctl) HandleCreateSubOrder(ctx *gin.Context) {
 		return
 	}
 
-	sOrder, err := c.CreateSubOrder(uint(id), req)
+	sOrder, err := c.CreateSubOrder(uint(id), user.ID)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
 		return
@@ -370,8 +543,22 @@ func (c *Ctl) HandleCreateSubOrder(ctx *gin.Context) {
 func (c *Ctl) HandleGetSubOrders(ctx *gin.Context) {
 
 	req := &ReqGetSubOrders{}
+	openID := ctx.Query("openid")
+	if len(openID) == 0 {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+	_, err := c.uc.GetUserByOpenID(openID)
+	if err != nil {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
 
-	sid := ctx.Query("id")
+	sid := ctx.Param("id")
 	mid, err := strconv.Atoi(sid)
 	if err != nil {
 		c.Errorf("request params invalid, err=%s", err.Error())
@@ -379,7 +566,7 @@ func (c *Ctl) HandleGetSubOrders(ctx *gin.Context) {
 		return
 	}
 
-	sOrders, err := c.GetSubOrders(uint(mid))
+	sOrders, err := c.GetAllSubOrders(uint(mid))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
 		return
@@ -394,15 +581,29 @@ func (c *Ctl) HandleGetSubOrders(ctx *gin.Context) {
 func (c *Ctl) HandleGetSubOrderInfo(ctx *gin.Context) {
 
 	req := &ReqGetSubOrderInfo{}
+	openID := ctx.Query("openid")
+	if len(openID) == 0 {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+	_, err := c.uc.GetUserByOpenID(openID)
+	if err != nil {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
 
-	mid, err := strconv.Atoi(ctx.Query("mid"))
+	mid, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		c.Errorf("request params invalid, err=%s", err.Error())
 		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
 		return
 	}
 
-	sid, err := strconv.Atoi(ctx.Query("sid"))
+	sid, err := strconv.Atoi(ctx.Param("sid"))
 	if err != nil {
 		c.Errorf("request params invalid, err=%s", err.Error())
 		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
@@ -438,14 +639,29 @@ func (c *Ctl) HandleSubmitSubOrder(ctx *gin.Context) {
 		return
 	}
 
-	mid, err := strconv.Atoi(ctx.Query("mid"))
+	openID := ctx.Query("openid")
+	if len(openID) == 0 {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+	_, err = c.uc.GetUserByOpenID(openID)
+	if err != nil {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	mid, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		c.Errorf("request params invalid, err=%s", err.Error())
 		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
 		return
 	}
 
-	sid, err := strconv.Atoi(ctx.Query("sid"))
+	sid, err := strconv.Atoi(ctx.Param("sid"))
 	if err != nil {
 		c.Errorf("request params invalid, err=%s", err.Error())
 		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
@@ -480,14 +696,14 @@ func (c *Ctl) HandleReviewSubOrder(ctx *gin.Context) {
 		return
 	}
 
-	mid, err := strconv.Atoi(ctx.Query("mid"))
+	mid, err := strconv.Atoi(ctx.Param("id"))
 	if err != nil {
 		c.Errorf("request params invalid, err=%s", err.Error())
 		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
 		return
 	}
 
-	sid, err := strconv.Atoi(ctx.Query("sid"))
+	sid, err := strconv.Atoi(ctx.Param("sid"))
 	if err != nil {
 		c.Errorf("request params invalid, err=%s", err.Error())
 		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
@@ -502,5 +718,56 @@ func (c *Ctl) HandleReviewSubOrder(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, &RespReviewSubOrders{
 		RespBase: req.GenResponse(err),
+	})
+}
+
+func (c *Ctl) HandleGetUserSubOrders(ctx *gin.Context) {
+
+	req := &ReqGetUserSubOrders{}
+	openID := ctx.Query("openid")
+	if len(openID) == 0 {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+	user, err := c.uc.GetUserByOpenID(openID)
+	if err != nil {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	states := make([]string, 0)
+	state := ctx.Query("state")
+	if len(state) != 0 {
+		states = strings.Split(state, ",")
+	}
+
+	subOrders, err := c.GetSubOrdersPlus(0, user.ID, states)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
+		return
+	}
+
+	sOrders := make([]*SubOrder, 0)
+	for _, s := range subOrders {
+
+		mo, err := c.GetOrder(s.MID)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
+			return
+		}
+		o := &SubOrder{
+			MOrder:    mo,
+			TSubOrder: s,
+		}
+		sOrders = append(sOrders, o)
+	}
+
+	ctx.JSON(http.StatusOK, &RespGetUserSubOrders{
+		RespBase:  req.GenResponse(err),
+		SubOrders: sOrders,
 	})
 }
