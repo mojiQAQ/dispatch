@@ -20,7 +20,7 @@ type (
 
 	RespGetMasterOrders struct {
 		*model.RespBase
-		Orders []*model.TMasterOrder `json:"orders"`
+		Orders []*Order `json:"orders"`
 	}
 
 	ReqGetAllMasterOrders struct {
@@ -29,7 +29,11 @@ type (
 
 	Order struct {
 		*model.TMasterOrder
-		Accepted bool `json:"accepted"`
+		PlatformCN string `json:"platform_cn"`
+		StateCN    string `json:"state_cn"`
+		IsAccepted bool   `json:"is_accepted"`
+		Accept     int    `json:"accept"`
+		Review     int    `json:"review"`
 	}
 
 	RespGetAllMasterOrders struct {
@@ -90,7 +94,7 @@ type (
 
 	RespGetSubOrders struct {
 		*model.RespBase
-		SubOrders []*model.TSubOrder `json:"sub_orders"`
+		SubOrders []*SubOrder `json:"sub_orders"`
 	}
 
 	ReqGetSubOrderInfo struct {
@@ -113,8 +117,6 @@ type (
 
 	ReqReviewSubOrders struct {
 		*model.ReqBase
-		AuditorID uint             `json:"auditor_id"`
-		State     model.OrderState `json:"state"`
 	}
 
 	RespReviewSubOrders struct {
@@ -127,12 +129,17 @@ type (
 
 	SubOrder struct {
 		*model.TSubOrder
+		StateCN string `json:"state_cn"`
+	}
+
+	SubOrderExtend struct {
+		*SubOrder
 		MOrder *model.TMasterOrder `json:"m_order"`
 	}
 
 	RespGetUserSubOrders struct {
 		*model.RespBase
-		SubOrders []*SubOrder `json:"sub_orders"`
+		SubOrders []*SubOrderExtend `json:"sub_orders"`
 	}
 )
 
@@ -210,16 +217,59 @@ func (c *Ctl) HandleGetOrders(ctx *gin.Context) {
 		return
 	}
 
-	orders, err := c.GetOrders(states, user.ID, uint(pid))
+	userID := user.ID
+	if user.Role == model.RoleAuditor || user.Role == model.RoleAdministrator {
+		userID = 0
+	}
+
+	orders, err := c.GetOrders(states, userID, uint(pid))
 	if err != nil {
 		c.Errorf("get orders failed, err=%v", err)
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
 		return
 	}
 
+	sOrders, err := c.GetSubOrdersPlus(0, 0, []string{"1", "2"})
+	if err != nil {
+		c.Errorf("get sub orders failed, err=%v", err)
+		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
+		return
+	}
+
+	id2accept := make(map[uint]int)
+	id2review := make(map[uint]int)
+
+	for _, so := range sOrders {
+		if _, exist := id2accept[so.ID]; !exist {
+			id2accept[so.MID] = 0
+		}
+
+		if _, exist := id2review[so.ID]; !exist {
+			id2review[so.MID] = 0
+		}
+
+		switch so.State {
+		case model.SOrderStateAccept:
+			id2accept[so.MID]++
+		case model.SOrderStateSubmit:
+			id2review[so.MID]++
+		}
+	}
+
+	data := make([]*Order, 0)
+	for _, o := range orders {
+		data = append(data, &Order{
+			TMasterOrder: o,
+			PlatformCN:   model.PlatformCN[o.Platform],
+			StateCN:      model.MOrderStateCN[o.State],
+			Accept:       id2accept[o.ID],
+			Review:       id2review[o.ID],
+		})
+	}
+
 	ctx.JSON(http.StatusOK, &RespGetMasterOrders{
 		RespBase: req.GenResponse(err),
-		Orders:   orders,
+		Orders:   data,
 	})
 }
 
@@ -281,11 +331,11 @@ func (c *Ctl) HandleAllGetOrders(ctx *gin.Context) {
 	for _, order := range orders {
 		newOrder := &Order{
 			TMasterOrder: order,
-			Accepted:     false,
+			IsAccepted:   false,
 		}
 
 		if _, ok := acceptOrder[order.ID]; ok {
-			newOrder.Accepted = true
+			newOrder.IsAccepted = true
 		}
 
 		allOrders = append(allOrders, newOrder)
@@ -370,26 +420,36 @@ func (c *Ctl) HandleGetOrderInfo(ctx *gin.Context) {
 		return
 	}
 
-	info := &Order{
-		TMasterOrder: order,
+	sOrders, err := c.GetSubOrdersPlus(order.ID, 0, []string{})
+	if err != nil {
+		c.Errorf("get sub_orders failed, err=%v", err)
+		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
+		return
 	}
 
-	if user.Role == model.RoleWorker {
-		subOrders, err := c.GetSubOrdersPlus(order.ID, user.ID, []string{})
-		if err != nil {
-			c.Errorf("get sub_orders failed, err=%v", err)
-			ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
-			return
+	isAccept := false
+	accepted := 0
+	review := 0
+	for _, so := range sOrders {
+		if so.UserID == user.ID {
+			isAccept = true
 		}
 
-		acceptOrder := make(map[uint]struct{})
-		for _, subOrder := range subOrders {
-			acceptOrder[subOrder.MID] = struct{}{}
+		switch so.State {
+		case model.SOrderStateSubmit:
+			review++
+		case model.SOrderStateAccept:
+			accepted++
 		}
+	}
 
-		if _, ok := acceptOrder[info.ID]; ok {
-			info.Accepted = true
-		}
+	info := &Order{
+		TMasterOrder: order,
+		PlatformCN:   model.PlatformCN[order.Platform],
+		StateCN:      model.MOrderStateCN[order.State],
+		IsAccepted:   isAccept,
+		Accept:       accepted,
+		Review:       review,
 	}
 
 	ctx.JSON(http.StatusOK, &RespGetMasterOrder{
@@ -572,9 +632,17 @@ func (c *Ctl) HandleGetSubOrders(ctx *gin.Context) {
 		return
 	}
 
+	data := make([]*SubOrder, 0)
+	for _, so := range sOrders {
+		data = append(data, &SubOrder{
+			TSubOrder: so,
+			StateCN:   model.SOrderStateCN[so.State],
+		})
+	}
+
 	ctx.JSON(http.StatusOK, &RespGetSubOrders{
 		RespBase:  req.GenResponse(err),
-		SubOrders: sOrders,
+		SubOrders: data,
 	})
 }
 
@@ -682,16 +750,34 @@ func (c *Ctl) HandleSubmitSubOrder(ctx *gin.Context) {
 func (c *Ctl) HandleReviewSubOrder(ctx *gin.Context) {
 
 	req := &ReqReviewSubOrders{}
-	err := ctx.ShouldBindBodyWith(req, binding.JSON)
+
+	openID := ctx.Query("openid")
+	if len(openID) == 0 {
+		err := fmt.Errorf("invalid openid: %s", openID)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+	user, err := c.uc.GetUserByOpenID(openID)
 	if err != nil {
+		err := fmt.Errorf("invalid openid: %s", openID)
 		c.Errorf("parsing request failed, err=%s", err.Error())
 		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
 		return
 	}
 
-	ok, err := valid.ValidateStruct(req)
-	if err != nil || !ok {
-		c.Errorf("request params invalid, err=%s", err.Error())
+	state := ctx.Query("state")
+	if len(state) == 0 {
+		err := fmt.Errorf("invalid state: %s", state)
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	iState, err := strconv.Atoi(state)
+	if err != nil {
+		err := fmt.Errorf("invalid state: %s", state)
+		c.Errorf("parsing request failed, err=%s", err.Error())
 		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
 		return
 	}
@@ -710,7 +796,7 @@ func (c *Ctl) HandleReviewSubOrder(ctx *gin.Context) {
 		return
 	}
 
-	err = c.ReviewSubOrder(uint(mid), uint(sid), req.AuditorID, req.State)
+	err = c.ReviewSubOrder(uint(mid), uint(sid), user.ID, model.OrderState(iState))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
 		return
@@ -751,7 +837,7 @@ func (c *Ctl) HandleGetUserSubOrders(ctx *gin.Context) {
 		return
 	}
 
-	sOrders := make([]*SubOrder, 0)
+	sOrders := make([]*SubOrderExtend, 0)
 	for _, s := range subOrders {
 
 		mo, err := c.GetOrder(s.MID)
@@ -759,9 +845,11 @@ func (c *Ctl) HandleGetUserSubOrders(ctx *gin.Context) {
 			ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
 			return
 		}
-		o := &SubOrder{
-			MOrder:    mo,
-			TSubOrder: s,
+		o := &SubOrderExtend{
+			MOrder: mo,
+			SubOrder: &SubOrder{
+				TSubOrder: s,
+			},
 		}
 		sOrders = append(sOrders, o)
 	}

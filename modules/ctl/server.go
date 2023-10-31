@@ -3,6 +3,7 @@ package ctl
 import (
 	"context"
 	"fmt"
+	"github.com/mojiQAQ/dispatch/modules/wechat"
 	"net/http"
 	"os"
 	"os/signal"
@@ -27,6 +28,8 @@ type Server struct {
 	h  *gin.Engine
 	OC *order.Ctl
 	UC *user.Ctl
+	TC *trade.Ctl
+	WC *wechat.Ctl
 }
 
 func NewServer() *Server {
@@ -56,7 +59,9 @@ func (s *Server) Init() {
 	s.h = gin.Default()
 	s.Http = &http.Server{Handler: s.h}
 
-	s.UC = user.NewCtl(s.Logger, s.Database.Write, trade.NewCtl(), s.HttpClient(), s.cfg.WXAuth)
+	s.WC = wechat.NewCtl(s.Logger, s.HttpClient(), s.cfg.WXAuth)
+	s.TC = trade.NewCtl(s.Logger, s.Database.Write)
+	s.UC = user.NewCtl(s.Logger, s.Database.Write, s.TC, s.WC)
 	s.OC = order.NewCtl(s.Logger, s.Database.Write, s.UC)
 
 	s.InitRouter()
@@ -64,8 +69,11 @@ func (s *Server) Init() {
 }
 
 func (s *Server) InitRouter() {
-	s.OC.InitRouter(&s.h.RouterGroup)
-	s.UC.InitRouter(&s.h.RouterGroup)
+	g := s.h.Group("/dispatch")
+	g.StaticFS(s.cfg.ImageBed.RelativePath, http.Dir(s.cfg.ImageBed.Path))
+	s.OC.InitRouter(g)
+	s.UC.InitRouter(g)
+	s.TC.InitRouter(g)
 }
 
 func (s *Server) Start() {
@@ -76,6 +84,10 @@ func (s *Server) Start() {
 	}
 
 	go func() {
+		if !s.cfg.HTTPSServer.Enable {
+			return
+		}
+
 		err = s.h.RunTLS(fmt.Sprintf("%s:%d", s.LocalIPStr, s.cfg.HTTPSServer.Port),
 			s.cfg.HTTPSServer.Cert, s.cfg.HTTPSServer.Key)
 		if err != nil {

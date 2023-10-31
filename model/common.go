@@ -9,6 +9,16 @@ type (
 	RespBase struct {
 		Message string `json:"message"`
 	}
+
+	Page struct {
+		Offset int `json:"offset"`
+		Limit  int `json:"limit"`
+	}
+
+	PageInfo struct {
+		*Page
+		Total int `json:"total"`
+	}
 )
 
 func (r *ReqBase) GenResponse(err error) *RespBase {

@@ -18,13 +18,16 @@ Database:
     PoolSize: 50
 
 HTTPSServer:
+  Enable: true
   Port: 7443
   Cert: server.crt
   Key: server.key
 WXAuth:
-  URL: https://api.weixin.qq.com/sns/jscode2session
-  APPID: wx6779ff6c8a581fa8
-  Secret: 326ebfde76a1074e4acaeb0ed3fa1470
-
-APPID: wx58bce1a8ea733285
-Secret: 53692d4a5a02d2fc0bd1e993615f5300
+  URL: https://api.weixin.qq.com
+  APPID: wx58bce1a8ea733285
+  Secret: 53692d4a5a02d2fc0bd1e993615f5300
+#  APPID: wx6779ff6c8a581fa8
+#  Secret: 326ebfde76a1074e4acaeb0ed3fa1470
+ImageBed:
+  RelativePath: /upload/images
+  Path: upload/images

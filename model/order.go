@@ -19,7 +19,7 @@ type (
 
 	MasterOrder struct {
 		UUID     string     `gorm:"uuid" json:"uuid"`                            // 订单 UUID
-		Name     string     `gorm:"name" json:"name" valid:"required"`           // 订单名称
+		Name     string     `gorm:"name" json:"name"`                            // 订单名称
 		Context  string     `gorm:"context" json:"context"`                      // 订单内容
 		Remark   string     `gorm:"remark" json:"remark"`                        // 订单备注
 		Platform Platform   `gorm:"platform" json:"platform" valid:"required"`   // 订单平台
@@ -59,8 +59,15 @@ const (
 	MOrderStateDoing                         // 进行中：此时订单已支付，接单员可以开始接单
 	MOrderStateDone                          // 已完成：在订单截止时间所有接单人都已完成
 	MOrderStateFinish                        // 已结束：在订单截止时间未全部完成
-
 )
+
+var MOrderStateCN = map[OrderState]string{
+	MOrderStateCreated: "待支付",
+	MOrderStateCancel:  "取消",
+	MOrderStateDoing:   "进行中",
+	MOrderStateDone:    "已完成",
+	MOrderStateFinish:  "已结束",
+}
 
 const (
 	/*
@@ -79,6 +86,14 @@ const (
 	SOrderStateReject                         // 驳回
 )
 
+var SOrderStateCN = map[OrderState]string{
+	SOrderStateAccept:   "已接受",
+	SOrderStateSubmit:   "待审核",
+	SOrderStateTimeout:  "超时",
+	SOrderStateComplete: "已完成",
+	SOrderStateReject:   "驳回",
+}
+
 const (
 	PlatformTB Platform = iota + 1 // 淘宝
 	PlatformTM                     // 天猫
@@ -86,3 +101,11 @@ const (
 	PlatformDY                     // 抖音
 	PlatformKS                     // 快手
 )
+
+var PlatformCN = map[Platform]string{
+	PlatformTB: "淘宝",
+	PlatformTM: "天猫",
+	PlatformJD: "京东",
+	PlatformDY: "抖音",
+	PlatformKS: "快手",
+}

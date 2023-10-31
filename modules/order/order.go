@@ -251,8 +251,7 @@ func (c *Ctl) SubmitSubOrder(mid, sid uint, req *ReqSubmitSubOrders) error {
 	}
 
 	// 检查子订单是否允许提交
-	if order.State != model.SOrderStateAccept && order.State != model.SOrderStateReject &&
-		order.State != model.SOrderStateSubmit {
+	if order.State != model.SOrderStateAccept && order.State != model.SOrderStateReject && order.State != model.SOrderStateSubmit {
 		return fmt.Errorf("the sub order state only accept and reject can be submit")
 	}
 

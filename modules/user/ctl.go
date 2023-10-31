@@ -1,14 +1,11 @@
 package user
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-
+	"github.com/mojiQAQ/dispatch/modules/wechat"
 	"gorm.io/gorm"
 
-	"git.ucloudadmin.com/unetworks/app/pkg/httpclient"
 	"git.ucloudadmin.com/unetworks/app/pkg/log"
 	"github.com/mojiQAQ/dispatch/model"
 	"github.com/mojiQAQ/dispatch/modules/trade"
@@ -19,31 +16,20 @@ type (
 		*log.Logger
 		db *gorm.DB
 
-		Conf   model.WXAuth
-		client *httpclient.HttpClient
-
 		minBalance float64
 
+		wx    *wechat.Ctl
 		trade *trade.Ctl
-	}
-
-	AuthKey struct {
-		SessionKey string `json:"session_key"`
-		UnionID    string `json:"unionid"`
-		OpenID     string `json:"openid"`
-		ErrMsg     string `json:"errmsg"`
-		ErrCode    int32  `json:"errcode"`
 	}
 )
 
-func NewCtl(logger *log.Logger, db *gorm.DB, t *trade.Ctl, client *httpclient.HttpClient, cfg model.WXAuth) *Ctl {
+func NewCtl(logger *log.Logger, db *gorm.DB, t *trade.Ctl, w *wechat.Ctl) *Ctl {
 	return &Ctl{
 		Logger: logger,
 		db:     db,
 
-		Conf:   cfg,
-		client: client,
-		trade:  t,
+		wx:    w,
+		trade: t,
 	}
 }
 
@@ -213,33 +199,9 @@ func (c *Ctl) RewardForOrder(tx *gorm.DB, userID uint, amount float64, orderID s
 	return tx.Model(model.TUser{}).Where("id = ?", userID).Updates(user).Error
 }
 
-func (c *Ctl) login(code string) (*AuthKey, error) {
-
-	url := fmt.Sprintf("%s?appid=%s&secret=%s&grant_type=authorization_code&js_code=%s",
-		c.Conf.URL, c.Conf.APPID, c.Conf.Secret, code)
-
-	resp := &httpclient.HttpResp{}
-	resp, err := c.client.Get(map[string]string{"Content-Type": "application/json"}, url)
-	if err != nil {
-		return nil, err
-	}
-
-	authkey := &AuthKey{}
-	err = json.Unmarshal(resp.Body, authkey)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf(authkey.ErrMsg)
-	}
-
-	return authkey, nil
-}
-
 func (c *Ctl) Login(code string, role model.Role) (string, error) {
 
-	auth, err := c.login(code)
+	auth, err := c.wx.GetAuthKey(code)
 	if err != nil {
 		return "", err
 	}
@@ -259,4 +221,14 @@ func (c *Ctl) Login(code string, role model.Role) (string, error) {
 	}
 
 	return userInfo.OpenID, err
+}
+
+func (c *Ctl) GetPhoneNumber(code string) (string, error) {
+
+	phone, err := c.wx.GetPhoneNumber(code)
+	if err != nil {
+		return "", nil
+	}
+
+	return phone.PurePhoneNumber, nil
 }

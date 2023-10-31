@@ -20,3 +20,10 @@ const (
 	TypePublishOrder                       // 发布订单
 	TypeCompleteOrder                      // 完成订单
 )
+
+var TradeTypeCN = map[TradeType]string{
+	TypeRecharge:      "充值",
+	TypeWithdraw:      "提现",
+	TypePublishOrder:  "派单",
+	TypeCompleteOrder: "接单",
+}

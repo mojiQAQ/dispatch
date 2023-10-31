@@ -4,20 +4,28 @@ import "git.ucloudadmin.com/unetworks/app/pkg/app"
 
 type (
 	HTTPS struct {
-		Port uint
-		Cert string
-		Key  string
+		Enable bool
+		Port   uint
+		Cert   string
+		Key    string
 	}
 
 	WXAuth struct {
 		URL    string
 		APPID  string
 		Secret string
+		Pkey   string
 	}
 
 	Config struct {
 		*app.ApplicationConfig
 		HTTPSServer HTTPS
 		WXAuth      WXAuth
+		ImageBed    ImageBed
+	}
+
+	ImageBed struct {
+		RelativePath string
+		Path         string
 	}
 )

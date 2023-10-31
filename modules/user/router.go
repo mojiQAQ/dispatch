@@ -51,10 +51,14 @@ type (
 		*model.ReqBase
 	}
 
+	User struct {
+		*model.TUser
+		RoleCN string `json:"role_cn"`
+	}
+
 	RespGetUsers struct {
 		*model.RespBase
-
-		Users []*model.TUser `json:"users"`
+		Users []*User `json:"users"`
 	}
 
 	ReqLogin struct {
@@ -207,8 +211,16 @@ func (c *Ctl) HandleGetUsers(ctx *gin.Context) {
 		return
 	}
 
+	data := make([]*User, 0)
+	for _, u := range users {
+		data = append(data, &User{
+			TUser:  u,
+			RoleCN: model.RoleCN[u.Role],
+		})
+	}
+
 	ctx.JSON(http.StatusOK, &RespGetUsers{
 		RespBase: req.GenResponse(err),
-		Users:    users,
+		Users:    data,
 	})
 }

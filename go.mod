@@ -56,6 +56,7 @@ require (
 	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.11 // indirect
+	github.com/wechatpay-apiv3/wechatpay-go v0.2.17 // indirect
 	go.etcd.io/etcd/api/v3 v3.5.7 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.7 // indirect
 	go.etcd.io/etcd/client/v3 v3.5.7 // indirect
