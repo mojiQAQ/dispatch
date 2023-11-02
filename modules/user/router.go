@@ -29,7 +29,7 @@ type (
 	ReqHandleBalance struct {
 		*model.ReqBase
 		TradeType model.TradeType `json:"trade_type"`
-		Amount    float64         `json:"amount"`
+		Amount    int64           `json:"amount"`
 	}
 
 	PrePayInfo struct {

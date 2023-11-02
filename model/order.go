@@ -25,8 +25,8 @@ type (
 		Platform Platform   `gorm:"platform" json:"platform" valid:"required"`   // 订单平台
 		UserID   uint       `gorm:"user_id" json:"user_id"`                      // 创建人 ID
 		State    OrderState `gorm:"state" json:"state"`                          // 订单状态
-		Total    uint32     `gorm:"total" json:"total" valid:"required"`         // 总数量
-		Complete uint32     `gorm:"complete" json:"complete"`                    // 已完成
+		Total    int64      `gorm:"total" json:"total" valid:"required"`         // 总数量
+		Complete int64      `gorm:"complete" json:"complete"`                    // 已完成
 		FinishAt time.Time  `gorm:"finish_at" json:"finish_at" valid:"required"` // 订单截止时间
 	}
 

@@ -2,10 +2,16 @@ package order
 
 import (
 	"fmt"
+	"github.com/mojiQAQ/dispatch/modules/utils"
 	"gorm.io/gorm"
 	"strings"
 
 	"github.com/mojiQAQ/dispatch/model"
+)
+
+const (
+	PublishOrderPrice  = 200 // 单位：分
+	CompleteOrderPrice = 100
 )
 
 func (c *Ctl) GetOrders(states []string, userID, platform uint) ([]*model.TMasterOrder, error) {
@@ -56,7 +62,7 @@ func (c *Ctl) CreateMasterOrder(order *model.MasterOrder, openID string) (*model
 	}
 
 	order.State = model.MOrderStateCreated
-	order.UUID = GenerateUUID()
+	order.UUID = utils.GenerateUUID()
 	order.UserID = user.ID
 
 	tOrder := &model.TMasterOrder{MasterOrder: order}
@@ -121,7 +127,7 @@ func (c *Ctl) PayForMasterOrder(id uint) error {
 	}()
 
 	// 支付订单
-	err = c.uc.PayForPublishOrder(tx, order.UserID, float64(order.Total), order.UUID)
+	err = c.uc.PayForPublishOrder(tx, order.UserID, order.Total*PublishOrderPrice, order.UUID)
 	if err != nil {
 		return err
 	}
@@ -176,7 +182,7 @@ func (c *Ctl) CreateSubOrder(mid uint, userID uint) (*model.TSubOrder, error) {
 	}
 
 	sOrder := &model.SubOrder{
-		UUID:   GenerateUUID(),
+		UUID:   utils.GenerateUUID(),
 		MID:    mOrder.ID,
 		UserID: userID,
 		State:  model.SOrderStateAccept,
@@ -309,7 +315,7 @@ func (c *Ctl) ApproveSubOrder(mid, sid uint) error {
 	}
 
 	// 支付佣金
-	err = c.uc.RewardForOrder(tx, subOrder.UserID, 1, subOrder.UUID)
+	err = c.uc.RewardForOrder(tx, subOrder.UserID, CompleteOrderPrice, subOrder.UUID)
 	if err != nil {
 		return err
 	}

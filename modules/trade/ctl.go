@@ -23,7 +23,7 @@ func (c *Ctl) UpdateWxPayRecordState(db *gorm.DB, tradeID string, state string) 
 	return db.Model(model.TWxPayRecord{}).Where("trade_id = ?", tradeID).Update("state", state).Error
 }
 
-func (c *Ctl) AddWxPayRecord(db *gorm.DB, openid string, amount float64, tradeID, prepayID string) error {
+func (c *Ctl) AddWxPayRecord(db *gorm.DB, openid string, amount int64, tradeID, prepayID string) error {
 
 	record := &model.TWxPayRecord{
 		PrepayID: prepayID,
@@ -36,7 +36,7 @@ func (c *Ctl) AddWxPayRecord(db *gorm.DB, openid string, amount float64, tradeID
 	return db.Model(model.TWxPayRecord{}).Create(record).Error
 }
 
-func (c *Ctl) AddTradeRecord(db *gorm.DB, userID uint, Type model.TradeType, amount float64, TradeID string) error {
+func (c *Ctl) AddTradeRecord(db *gorm.DB, userID uint, Type model.TradeType, amount int64, TradeID string) error {
 
 	record := &model.TTradeRecord{
 		TradeID: TradeID,

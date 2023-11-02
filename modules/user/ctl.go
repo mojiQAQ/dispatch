@@ -2,14 +2,13 @@ package user
 
 import (
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/mojiQAQ/dispatch/modules/wechat"
-	"gorm.io/gorm"
-	"net/http"
-
 	"git.ucloudadmin.com/unetworks/app/pkg/log"
 	"github.com/mojiQAQ/dispatch/model"
 	"github.com/mojiQAQ/dispatch/modules/trade"
+	"github.com/mojiQAQ/dispatch/modules/utils"
+	"github.com/mojiQAQ/dispatch/modules/wechat"
+	"gorm.io/gorm"
+	"net/http"
 )
 
 type (
@@ -17,7 +16,7 @@ type (
 		*log.Logger
 		db *gorm.DB
 
-		minBalance float64
+		minBalance int64
 
 		wx    *wechat.Ctl
 		trade *trade.Ctl
@@ -83,7 +82,7 @@ func (c *Ctl) RegisterUser(openID, pn string, role model.Role) (*model.User, err
 	return user, nil
 }
 
-func (c *Ctl) DoManageBalance(userID uint, tradeType model.TradeType, amount float64) (*PrePayInfo, error) {
+func (c *Ctl) DoManageBalance(userID uint, tradeType model.TradeType, amount int64) (*PrePayInfo, error) {
 
 	var err error
 	var prepayInfo *PrePayInfo
@@ -97,7 +96,7 @@ func (c *Ctl) DoManageBalance(userID uint, tradeType model.TradeType, amount flo
 		}
 	}()
 
-	tradeID := GenerateUUID()
+	tradeID := utils.GenerateUUID()
 	switch tradeType {
 	case model.TypeRecharge:
 		prepayInfo, err = c.RechargeBalance(tx, userID, amount, tradeID)
@@ -107,6 +106,7 @@ func (c *Ctl) DoManageBalance(userID uint, tradeType model.TradeType, amount flo
 		err = fmt.Errorf("unsupport trade type: %v", model.TradeTypeCN[tradeType])
 	}
 	if err != nil {
+		c.Errorf(err.Error())
 		return nil, err
 	}
 
@@ -118,27 +118,21 @@ func (c *Ctl) DoManageBalance(userID uint, tradeType model.TradeType, amount flo
 	return prepayInfo, nil
 }
 
-func (c *Ctl) RechargeBalance(tx *gorm.DB, userID uint, amount float64, tradeID string) (*PrePayInfo, error) {
+func (c *Ctl) RechargeBalance(tx *gorm.DB, userID uint, amount int64, tradeID string) (*PrePayInfo, error) {
 
 	user, err := c.GetUser(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := c.wx.CreateWechatPrePayOrder(user.OpenID, tradeID, fmt.Sprintf("余额充值-%f", amount), int64(amount))
+	resp, err := c.wx.CreateWechatPrePayOrder(user.OpenID, tradeID, fmt.Sprintf("余额充值-%d元", amount/100), amount)
 	if err != nil {
+		c.Errorf("create prepay order failed, err=%s", err.Error())
 		return nil, err
 	}
 
 	// 创建微信支付记录
 	err = c.trade.AddWxPayRecord(tx, user.OpenID, amount, tradeID, *resp.PrepayId)
-	if err != nil {
-		return nil, err
-	}
-
-	// 更新账户余额
-	user.Balance = user.Balance + amount
-	err = tx.Model(model.TUser{}).Where("id = ?", userID).Updates(user).Error
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +147,7 @@ func (c *Ctl) RechargeBalance(tx *gorm.DB, userID uint, amount float64, tradeID 
 	}, nil
 }
 
-func (c *Ctl) WithdrawBalance(tx *gorm.DB, userID uint, amount float64, tradeID string) error {
+func (c *Ctl) WithdrawBalance(tx *gorm.DB, userID uint, amount int64, tradeID string) error {
 
 	user, err := c.GetUser(userID)
 	if err != nil {
@@ -182,7 +176,7 @@ func (c *Ctl) WithdrawBalance(tx *gorm.DB, userID uint, amount float64, tradeID 
 	return tx.Model(model.TUser{}).Where("id = ?", userID).Updates(user).Error
 }
 
-func (c *Ctl) PayForPublishOrder(tx *gorm.DB, userID uint, amount float64, orderID string) error {
+func (c *Ctl) PayForPublishOrder(tx *gorm.DB, userID uint, amount int64, orderID string) error {
 
 	user, err := c.GetUser(userID)
 	if err != nil {
@@ -204,7 +198,7 @@ func (c *Ctl) PayForPublishOrder(tx *gorm.DB, userID uint, amount float64, order
 	return tx.Model(model.TUser{}).Where("id = ?", userID).Updates(user).Error
 }
 
-func (c *Ctl) RewardForOrder(tx *gorm.DB, userID uint, amount float64, orderID string) error {
+func (c *Ctl) RewardForOrder(tx *gorm.DB, userID uint, amount int64, orderID string) error {
 
 	user, err := c.GetUser(userID)
 	if err != nil {
@@ -263,11 +257,6 @@ func (c *Ctl) Register(phoneCode, userCode string, role model.Role) (*model.User
 	return c.RegisterUser(auth.OpenID, phone.PhoneNumber, role)
 }
 
-func GenerateUUID() string {
-
-	return uuid.New().String()
-}
-
 func (c *Ctl) PrepayCallback(req *http.Request) error {
 
 	var err error
@@ -291,12 +280,19 @@ func (c *Ctl) PrepayCallback(req *http.Request) error {
 		return err
 	}
 
-	err = c.trade.AddTradeRecord(tx, user.ID, model.TypeRecharge, float64(*transaction.Amount.Total), *transaction.OutTradeNo)
+	err = c.trade.AddTradeRecord(tx, user.ID, model.TypeRecharge, *transaction.Amount.Total, *transaction.OutTradeNo)
 	if err != nil {
 		return err
 	}
 
 	err = c.trade.UpdateWxPayRecordState(tx, *transaction.OutTradeNo, *transaction.TradeState)
+	if err != nil {
+		return err
+	}
+
+	// 更新账户余额
+	user.Balance = user.Balance + *transaction.Amount.Total
+	err = tx.Model(model.TUser{}).Where("id = ?", user.ID).Updates(user).Error
 	if err != nil {
 		return err
 	}

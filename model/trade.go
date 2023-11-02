@@ -8,17 +8,17 @@ type (
 		TradeID string    `gorm:"column:trade_id" json:"trade_id"` // 交易 ID，如提现信息、充值信息
 		UserID  uint      `gorm:"column:user_id" json:"user_id"`   // 用户 ID
 		Type    TradeType `gorm:"column:type" json:"type"`         // 交易类型
-		Amount  float64   `gorm:"amount" json:"amount"`            // 金额
+		Amount  int64     `gorm:"amount" json:"amount"`            // 金额
 	}
 
 	TWxPayRecord struct {
 		*gorm.Model
-		PrepayID        string     `gorm:"column:prepay_id" json:"prepay_id"` // 预支付 ID
-		TradeID         string     `gorm:"column:trade_id" json:"trade_id"`   // 交易 ID，如提现信息、充值信息
-		OpenID          string     `gorm:"column:openid" json:"openid"`
-		WxTransactionID string     `gorm:"column:wx_transaction_id" json:"wx_transaction_id"`
-		Amount          float64    `gorm:"amount" json:"amount"` // 金额
-		State           WxPayState `gorm:"state" json:"state"`
+		PrepayID        string     `gorm:"column:prepay_id" json:"prepay_id"`                 // 预支付 ID
+		TradeID         string     `gorm:"column:trade_id" json:"trade_id"`                   // 交易 ID，如提现信息、充值信息
+		OpenID          string     `gorm:"column:openid" json:"openid"`                       // 用户 ID
+		WxTransactionID string     `gorm:"column:wx_transaction_id" json:"wx_transaction_id"` // 微信交易 ID
+		Amount          int64      `gorm:"amount" json:"amount"`                              // 金额，单位分
+		State           WxPayState `gorm:"state" json:"state"`                                // 支付状态
 	}
 
 	TradeType  uint32
