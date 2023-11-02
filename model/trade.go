@@ -11,7 +11,18 @@ type (
 		Amount  float64   `gorm:"amount" json:"amount"`            // 金额
 	}
 
-	TradeType uint32
+	TWxPayRecord struct {
+		*gorm.Model
+		PrepayID        string     `gorm:"column:prepay_id" json:"prepay_id"` // 预支付 ID
+		TradeID         string     `gorm:"column:trade_id" json:"trade_id"`   // 交易 ID，如提现信息、充值信息
+		OpenID          string     `gorm:"column:openid" json:"openid"`
+		WxTransactionID string     `gorm:"column:wx_transaction_id" json:"wx_transaction_id"`
+		Amount          float64    `gorm:"amount" json:"amount"` // 金额
+		State           WxPayState `gorm:"state" json:"state"`
+	}
+
+	TradeType  uint32
+	WxPayState string
 )
 
 const (
@@ -27,3 +38,14 @@ var TradeTypeCN = map[TradeType]string{
 	TypePublishOrder:  "派单",
 	TypeCompleteOrder: "接单",
 }
+
+const (
+	WxPayStatePrepay     = "Prepay"
+	WxPayStateSUCCESS    = "SUCCESS"
+	WxPayStateREFUND     = "REFUND"
+	WxPayStateNOTPAY     = "NOTPAY"
+	WxPayStateCLOSED     = "CLOSED"
+	WxPayStateREVOKED    = "REVOKED"
+	WxPayStateUSERPAYING = "USERPAYING"
+	WxPayStatePAYERROR   = "PAYERROR"
+)

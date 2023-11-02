@@ -30,11 +30,20 @@ type (
 		*model.ReqBase
 		TradeType model.TradeType `json:"trade_type"`
 		Amount    float64         `json:"amount"`
-		TradeID   string          `json:"trade_id"`
+	}
+
+	PrePayInfo struct {
+		PrepayID  string `json:"prepay_id"`
+		NonceStr  string `json:"nonce_str"`
+		SignType  string `json:"sign_type"`
+		PaySign   string `json:"pay_sign"`
+		Package   string `json:"package"`
+		Timestamp string `json:"timestamp"`
 	}
 
 	RespHandleBalance struct {
 		*model.RespBase
+		PrepayInfo *PrePayInfo `json:"prepay_info"`
 	}
 
 	ReqGetUserInfo struct {
@@ -83,6 +92,29 @@ type (
 		*model.RespBase
 		*model.User
 	}
+
+	Resource struct {
+		Algorithm      string `json:"algorithm"`
+		Ciphertext     string `json:"ciphertext"`
+		AssociatedData string `json:"associated_data"`
+		OriginalType   string `json:"original_type"`
+		Nonce          string `json:"nonce"`
+	}
+
+	ReqPrepayCallback struct {
+		*model.ReqBase
+		ID           string   `json:"id"`
+		CreateTime   string   `json:"create_time"`
+		EventType    string   `json:"event_type"`
+		ResourceType string   `json:"resource_type"`
+		Resource     Resource `json:"resource"`
+		Summary      string   `json:"summary"`
+	}
+
+	RespPrepayCallback struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
 )
 
 func (c *Ctl) InitRouter(g *gin.RouterGroup) {
@@ -100,8 +132,11 @@ func (c *Ctl) InitRouter(g *gin.RouterGroup) {
 	// 用户详情
 	g.GET("/users/:openid", c.HandleGetUserInfo)
 
-	// 充值
+	// 充值/提现
 	g.POST("/users/:openid/balance", c.HandleBalance)
+
+	// 微信支付确认回调
+	g.POST("/wechat_prepay_callback", c.HandlePrepayCallback)
 }
 
 func (c *Ctl) HandleRegister(ctx *gin.Context) {
@@ -206,21 +241,44 @@ func (c *Ctl) HandleRegisterUser(ctx *gin.Context) {
 func (c *Ctl) HandleBalance(ctx *gin.Context) {
 
 	req := &ReqHandleBalance{}
-
-	sid := ctx.Param("id")
-	id, err := strconv.Atoi(sid)
+	err := ctx.ShouldBindBodyWith(req, binding.JSON)
 	if err != nil {
 		c.Errorf("parsing request failed, err=%s", err.Error())
 		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
 	}
 
-	err = c.DoManageBalance(uint(id), req.TradeType, req.Amount, req.TradeID)
+	ok, err := valid.ValidateStruct(req)
+	if err != nil || !ok {
+		c.Errorf("request params invalid, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	openid := ctx.Query("openid")
+	if len(openid) == 0 {
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	user, err := c.GetUserByOpenID(openid)
+	if err != nil {
+		c.Errorf("check user failed: %s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	prepayInfo, err := c.DoManageBalance(user.ID, req.TradeType, req.Amount)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
 		return
 	}
 
-	ctx.JSON(http.StatusOK, req.GenResponse(nil))
+	ctx.JSON(http.StatusOK, &RespHandleBalance{
+		RespBase:   req.GenResponse(nil),
+		PrepayInfo: prepayInfo,
+	})
 }
 
 func (c *Ctl) HandleGetUserInfo(ctx *gin.Context) {
@@ -267,5 +325,22 @@ func (c *Ctl) HandleGetUsers(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, &RespGetUsers{
 		RespBase: req.GenResponse(err),
 		Users:    data,
+	})
+}
+
+func (c *Ctl) HandlePrepayCallback(ctx *gin.Context) {
+
+	err := c.PrepayCallback(ctx.Request)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &RespPrepayCallback{
+			Code:    "FAIL",
+			Message: "失败",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, &RespPrepayCallback{
+		Code:    "SUCCESS",
+		Message: "成功",
 	})
 }

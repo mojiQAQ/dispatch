@@ -6,6 +6,8 @@ import (
 	"git.ucloudadmin.com/unetworks/app/pkg/httpclient"
 	"git.ucloudadmin.com/unetworks/app/pkg/log"
 	"github.com/mojiQAQ/dispatch/model"
+	"github.com/wechatpay-apiv3/wechatpay-go/core"
+	"github.com/wechatpay-apiv3/wechatpay-go/core/notify"
 	"net/http"
 )
 
@@ -15,7 +17,9 @@ type (
 		Conf   model.WXAuth
 		client *httpclient.HttpClient
 
-		token *AccessToken
+		token   *AccessToken
+		wClient *core.Client
+		handle  *notify.Handler
 	}
 
 	ErrInfo struct {
@@ -55,12 +59,25 @@ type (
 )
 
 func NewCtl(logger *log.Logger, client *httpclient.HttpClient, cfg model.WXAuth) *Ctl {
-
-	return &Ctl{
+	ctl := &Ctl{
 		Logger: logger,
 		client: client,
 		Conf:   cfg,
 	}
+
+	wClient, err := loadPrivateKey(cfg.Mch.MchID, cfg.Mch.CertSN, cfg.Mch.APIV3Key, cfg.Mch.PrivateKey)
+	if err != nil {
+		panic(err)
+	}
+
+	handle, err := certLoader(cfg.Mch.MchID, cfg.Mch.CertSN, cfg.Mch.APIV3Key, cfg.Mch.PrivateKey)
+	if err != nil {
+		panic(err)
+	}
+
+	ctl.wClient = wClient
+	ctl.handle = handle
+	return ctl
 }
 
 func (c *Ctl) GetAuthKey(code string, role model.Role) (*AuthKey, error) {

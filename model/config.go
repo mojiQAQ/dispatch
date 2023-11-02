@@ -15,12 +15,18 @@ type (
 		Secret string
 	}
 
+	MchConf struct {
+		CertSN     string
+		APIV3Key   string
+		PrivateKey string
+		MchID      string
+	}
+
 	WXAuth struct {
 		URL       string
 		Publisher AppConf
 		Worker    AppConf
-		Pkey      string
-		MchID     string
+		Mch       MchConf
 	}
 
 	Config struct {

@@ -19,7 +19,24 @@ func NewCtl(logger *log.Logger, db *gorm.DB) *Ctl {
 	return &Ctl{logger, db}
 }
 
-func (c *Ctl) AddTransactionRecord(db *gorm.DB, userID uint, Type model.TradeType, amount float64, TradeID string) error {
+func (c *Ctl) UpdateWxPayRecordState(db *gorm.DB, tradeID string, state string) error {
+	return db.Model(model.TWxPayRecord{}).Where("trade_id = ?", tradeID).Update("state", state).Error
+}
+
+func (c *Ctl) AddWxPayRecord(db *gorm.DB, openid string, amount float64, tradeID, prepayID string) error {
+
+	record := &model.TWxPayRecord{
+		PrepayID: prepayID,
+		TradeID:  tradeID,
+		OpenID:   openid,
+		Amount:   amount,
+		State:    model.WxPayStatePrepay,
+	}
+
+	return db.Model(model.TWxPayRecord{}).Create(record).Error
+}
+
+func (c *Ctl) AddTradeRecord(db *gorm.DB, userID uint, Type model.TradeType, amount float64, TradeID string) error {
 
 	record := &model.TTradeRecord{
 		TradeID: TradeID,

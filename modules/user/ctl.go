@@ -2,8 +2,10 @@ package user
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/mojiQAQ/dispatch/modules/wechat"
 	"gorm.io/gorm"
+	"net/http"
 
 	"git.ucloudadmin.com/unetworks/app/pkg/log"
 	"github.com/mojiQAQ/dispatch/model"
@@ -81,9 +83,10 @@ func (c *Ctl) RegisterUser(openID, pn string, role model.Role) (*model.User, err
 	return user, nil
 }
 
-func (c *Ctl) DoManageBalance(userID uint, tradeType model.TradeType, amount float64, tradeID string) error {
+func (c *Ctl) DoManageBalance(userID uint, tradeType model.TradeType, amount float64) (*PrePayInfo, error) {
 
 	var err error
+	var prepayInfo *PrePayInfo
 	tx := c.db.Begin()
 	defer func() {
 		if err != nil {
@@ -94,40 +97,60 @@ func (c *Ctl) DoManageBalance(userID uint, tradeType model.TradeType, amount flo
 		}
 	}()
 
+	tradeID := GenerateUUID()
 	switch tradeType {
 	case model.TypeRecharge:
-		return c.RechargeBalance(tx, userID, amount, tradeID)
+		prepayInfo, err = c.RechargeBalance(tx, userID, amount, tradeID)
 	case model.TypeWithdraw:
-		return c.WithdrawBalance(tx, userID, amount, tradeID)
-	case model.TypePublishOrder:
-		err = c.PayForPublishOrder(tx, userID, amount, tradeID)
-	case model.TypeCompleteOrder:
-		return c.RewardForOrder(tx, userID, amount, tradeID)
+		err = c.WithdrawBalance(tx, userID, amount, tradeID)
+	default:
+		err = fmt.Errorf("unsupport trade type: %v", model.TradeTypeCN[tradeType])
 	}
-
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return tx.Commit().Error
+	err = tx.Commit().Error
+	if err != nil {
+		return nil, err
+	}
+
+	return prepayInfo, nil
 }
 
-func (c *Ctl) RechargeBalance(tx *gorm.DB, userID uint, amount float64, tradeID string) error {
+func (c *Ctl) RechargeBalance(tx *gorm.DB, userID uint, amount float64, tradeID string) (*PrePayInfo, error) {
 
 	user, err := c.GetUser(userID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// 创建充值记录
-	err = c.trade.AddTransactionRecord(tx, userID, model.TypeRecharge, amount, tradeID)
+	resp, err := c.wx.CreateWechatPrePayOrder(user.OpenID, tradeID, fmt.Sprintf("余额充值-%f", amount), int64(amount))
 	if err != nil {
-		return err
+		return nil, err
+	}
+
+	// 创建微信支付记录
+	err = c.trade.AddWxPayRecord(tx, user.OpenID, amount, tradeID, *resp.PrepayId)
+	if err != nil {
+		return nil, err
 	}
 
 	// 更新账户余额
 	user.Balance = user.Balance + amount
-	return tx.Model(model.TUser{}).Where("id = ?", userID).Updates(user).Error
+	err = tx.Model(model.TUser{}).Where("id = ?", userID).Updates(user).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return &PrePayInfo{
+		PrepayID:  *resp.PrepayId,
+		NonceStr:  *resp.NonceStr,
+		Package:   *resp.Package,
+		SignType:  *resp.SignType,
+		PaySign:   *resp.PaySign,
+		Timestamp: *resp.TimeStamp,
+	}, nil
 }
 
 func (c *Ctl) WithdrawBalance(tx *gorm.DB, userID uint, amount float64, tradeID string) error {
@@ -150,7 +173,7 @@ func (c *Ctl) WithdrawBalance(tx *gorm.DB, userID uint, amount float64, tradeID 
 	}
 
 	// 添加交易记录
-	err = c.trade.AddTransactionRecord(tx, userID, model.TypeWithdraw, amount, tradeID)
+	err = c.trade.AddTradeRecord(tx, userID, model.TypeWithdraw, amount, tradeID)
 	if err != nil {
 		return err
 	}
@@ -172,7 +195,7 @@ func (c *Ctl) PayForPublishOrder(tx *gorm.DB, userID uint, amount float64, order
 	}
 
 	// 添加交易记录
-	err = c.trade.AddTransactionRecord(tx, userID, model.TypePublishOrder, amount, orderID)
+	err = c.trade.AddTradeRecord(tx, userID, model.TypePublishOrder, amount, orderID)
 	if err != nil {
 		return err
 	}
@@ -189,7 +212,7 @@ func (c *Ctl) RewardForOrder(tx *gorm.DB, userID uint, amount float64, orderID s
 	}
 
 	// 添加交易记录
-	err = c.trade.AddTransactionRecord(tx, userID, model.TypeCompleteOrder, amount, orderID)
+	err = c.trade.AddTradeRecord(tx, userID, model.TypeCompleteOrder, amount, orderID)
 	if err != nil {
 		return err
 	}
@@ -238,4 +261,45 @@ func (c *Ctl) Register(phoneCode, userCode string, role model.Role) (*model.User
 	}
 
 	return c.RegisterUser(auth.OpenID, phone.PhoneNumber, role)
+}
+
+func GenerateUUID() string {
+
+	return uuid.New().String()
+}
+
+func (c *Ctl) PrepayCallback(req *http.Request) error {
+
+	var err error
+	tx := c.db.Begin()
+	defer func() {
+		if err != nil {
+			rErr := tx.Rollback().Error
+			if rErr != nil {
+				c.Errorf("tx rollback failed, err=%v", rErr)
+			}
+		}
+	}()
+
+	transaction, err := c.wx.PrepayCallback(req)
+	if err != nil {
+		return err
+	}
+
+	user, err := c.GetUserByOpenID(*transaction.Payer.Openid)
+	if err != nil {
+		return err
+	}
+
+	err = c.trade.AddTradeRecord(tx, user.ID, model.TypeRecharge, float64(*transaction.Amount.Total), *transaction.OutTradeNo)
+	if err != nil {
+		return err
+	}
+
+	err = c.trade.UpdateWxPayRecordState(tx, *transaction.OutTradeNo, *transaction.TradeState)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit().Error
 }

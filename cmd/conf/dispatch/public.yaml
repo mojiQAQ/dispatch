@@ -24,8 +24,17 @@ HTTPSServer:
   Key: server.key
 WXAuth:
   URL: https://api.weixin.qq.com
-  APPID: wx58bce1a8ea733285
-  Secret: 53692d4a5a02d2fc0bd1e993615f5300
+  Publisher:
+    APPID: wx5fb91f57712740f6
+    Secret: 29e4cf798eea8614141e8628d5a7c8f0
+  Worker:
+    APPID: wx5fb91f57712740f6
+    Secret: 29e4cf798eea8614141e8628d5a7c8f0
+  Mch:
+    MchID: "1656852473"
+    PrivateKey: apiclient_key.pem
+    CertSN: 6E8B0368C17EF896B1FDF52332DA40751698799B
+    APIV3Key: BaiXinTech18903902100PublisherTT
 #  APPID: wx6779ff6c8a581fa8
 #  Secret: 326ebfde76a1074e4acaeb0ed3fa1470
 ImageBed:
