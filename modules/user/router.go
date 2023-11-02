@@ -133,7 +133,7 @@ func (c *Ctl) InitRouter(g *gin.RouterGroup) {
 	g.GET("/users/:openid", c.HandleGetUserInfo)
 
 	// 充值/提现
-	g.POST("/users/:openid/balance", c.HandleBalance)
+	g.POST("/users/balance", c.HandleBalance)
 
 	// 微信支付确认回调
 	g.POST("/wechat_prepay_callback", c.HandlePrepayCallback)
