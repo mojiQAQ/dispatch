@@ -1,7 +1,6 @@
 package user
 
 import (
-	"errors"
 	"fmt"
 	"github.com/mojiQAQ/dispatch/modules/wechat"
 	"gorm.io/gorm"
@@ -199,36 +198,44 @@ func (c *Ctl) RewardForOrder(tx *gorm.DB, userID uint, amount float64, orderID s
 	return tx.Model(model.TUser{}).Where("id = ?", userID).Updates(user).Error
 }
 
-func (c *Ctl) Login(code string, role model.Role) (string, error) {
+func (c *Ctl) Login(code string, role model.Role) (*model.User, error) {
 
-	auth, err := c.wx.GetAuthKey(code)
+	auth, err := c.wx.GetAuthKey(code, role)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	userInfo, err := c.GetUserByOpenID(auth.OpenID)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			user, err := c.RegisterUser(auth.OpenID, "", role)
-			if err != nil {
-				return "", err
-			}
-
-			return user.OpenID, err
-		} else {
-			return "", err
-		}
+		//if errors.Is(err, gorm.ErrRecordNotFound) {
+		//	user, err := c.RegisterUser(auth.OpenID, "", role)
+		//	if err != nil {
+		//		return nil, err
+		//	}
+		//
+		//	return user, err
+		//} else {
+		//	return nil, err
+		//}
+		return nil, err
 	}
 
-	return userInfo.OpenID, err
+	return userInfo.User, nil
 }
 
-func (c *Ctl) GetPhoneNumber(code string) (string, error) {
+func (c *Ctl) Register(phoneCode, userCode string, role model.Role) (*model.User, error) {
 
-	phone, err := c.wx.GetPhoneNumber(code)
+	// 获取手机号
+	phone, err := c.wx.GetPhoneNumber(phoneCode, role)
 	if err != nil {
-		return "", nil
+		return nil, err
 	}
 
-	return phone.PurePhoneNumber, nil
+	// 获取 OpenID
+	auth, err := c.wx.GetAuthKey(userCode, role)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.RegisterUser(auth.OpenID, phone.PhoneNumber, role)
 }

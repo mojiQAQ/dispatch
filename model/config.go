@@ -10,11 +10,17 @@ type (
 		Key    string
 	}
 
-	WXAuth struct {
-		URL    string
-		APPID  string
+	AppConf struct {
+		AppID  string
 		Secret string
-		Pkey   string
+	}
+
+	WXAuth struct {
+		URL       string
+		Publisher AppConf
+		Worker    AppConf
+		Pkey      string
+		MchID     string
 	}
 
 	Config struct {

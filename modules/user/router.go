@@ -67,12 +67,27 @@ type (
 
 	RespLogin struct {
 		*model.RespBase
-		Token  string `json:"token"`
-		OpenID string `json:"openid"`
+		Token        string `json:"token"`
+		OpenID       string `json:"openid"`
+		IsRegistered bool   `json:"is_registered"`
+	}
+
+	ReqRegister struct {
+		*model.ReqBase
+		PhoneCode string     `json:"phone_code" valid:"required"`
+		UserCode  string     `json:"user_code" valid:"required"`
+		Role      model.Role `json:"role" valid:"required"`
+	}
+
+	RespRegister struct {
+		*model.RespBase
+		*model.User
 	}
 )
 
 func (c *Ctl) InitRouter(g *gin.RouterGroup) {
+
+	g.POST("/register", c.HandleRegister)
 
 	g.GET("/login", c.HandleLogin)
 
@@ -87,6 +102,35 @@ func (c *Ctl) InitRouter(g *gin.RouterGroup) {
 
 	// 充值
 	g.POST("/users/:openid/balance", c.HandleBalance)
+}
+
+func (c *Ctl) HandleRegister(ctx *gin.Context) {
+
+	req := &ReqRegister{}
+	err := ctx.ShouldBindBodyWith(req, binding.JSON)
+	if err != nil {
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	ok, err := valid.ValidateStruct(req)
+	if err != nil || !ok {
+		c.Errorf("request params invalid, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	user, err := c.Register(req.PhoneCode, req.UserCode, req.Role)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, &RespRegister{
+		RespBase: req.GenResponse(err),
+		User:     user,
+	})
 }
 
 func (c *Ctl) HandleLogin(ctx *gin.Context) {
@@ -116,7 +160,7 @@ func (c *Ctl) HandleLogin(ctx *gin.Context) {
 		return
 	}
 
-	openID, err := c.Login(code, model.Role(rd))
+	user, err := c.Login(code, model.Role(rd))
 	if err != nil {
 		c.Errorf("login failed, err=%s", err.Error())
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
@@ -124,8 +168,9 @@ func (c *Ctl) HandleLogin(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, &RespLogin{
-		RespBase: req.GenResponse(err),
-		OpenID:   openID,
+		RespBase:     req.GenResponse(err),
+		OpenID:       user.OpenID,
+		IsRegistered: user.Phone == "",
 	})
 }
 

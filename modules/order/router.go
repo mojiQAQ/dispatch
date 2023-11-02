@@ -211,7 +211,7 @@ func (c *Ctl) HandleGetOrders(ctx *gin.Context) {
 	platform := ctx.DefaultQuery("platform", "0")
 	pid, err := strconv.Atoi(platform)
 	if err != nil {
-		err := fmt.Errorf("invalid platform: %s", openid)
+		err := fmt.Errorf("invalid platform: %s", platform)
 		c.Errorf("parsing request failed, err=%s", err.Error())
 		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
 		return

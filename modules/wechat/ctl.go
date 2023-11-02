@@ -63,10 +63,21 @@ func NewCtl(logger *log.Logger, client *httpclient.HttpClient, cfg model.WXAuth)
 	}
 }
 
-func (c *Ctl) GetAuthKey(code string) (*AuthKey, error) {
+func (c *Ctl) GetAuthKey(code string, role model.Role) (*AuthKey, error) {
+
+	appid := ""
+	secret := ""
+	switch role {
+	case model.RolePublisher:
+		appid = c.Conf.Publisher.AppID
+		secret = c.Conf.Publisher.Secret
+	case model.RoleWorker:
+		appid = c.Conf.Worker.AppID
+		secret = c.Conf.Worker.Secret
+	}
 
 	url := fmt.Sprintf("%s/sns/jscode2session?appid=%s&secret=%s&grant_type=authorization_code&js_code=%s",
-		c.Conf.URL, c.Conf.APPID, c.Conf.Secret, code)
+		c.Conf.URL, appid, secret, code)
 
 	c.Debugf("login request: %s", url)
 	resp := &httpclient.HttpResp{}
@@ -90,10 +101,21 @@ func (c *Ctl) GetAuthKey(code string) (*AuthKey, error) {
 	return authkey, nil
 }
 
-func (c *Ctl) getAccessToken() (*AccessToken, error) {
+func (c *Ctl) getAccessToken(role model.Role) (*AccessToken, error) {
+
+	appid := ""
+	secret := ""
+	switch role {
+	case model.RolePublisher:
+		appid = c.Conf.Publisher.AppID
+		secret = c.Conf.Publisher.Secret
+	case model.RoleWorker:
+		appid = c.Conf.Worker.AppID
+		secret = c.Conf.Worker.Secret
+	}
 
 	url := fmt.Sprintf("%s/cgi-bin/token?appid=%s&secret=%s&grant_type=client_credential",
-		c.Conf.URL, c.Conf.APPID, c.Conf.Secret)
+		c.Conf.URL, appid, secret)
 
 	c.Debugf("get access_token request: %s", url)
 	resp := &httpclient.HttpResp{}
@@ -102,7 +124,9 @@ func (c *Ctl) getAccessToken() (*AccessToken, error) {
 		return nil, err
 	}
 
-	token := &AccessToken{}
+	token := &AccessToken{
+		ErrInfo: &ErrInfo{},
+	}
 	err = json.Unmarshal(resp.Body, token)
 	if err != nil {
 		return nil, err
@@ -115,13 +139,13 @@ func (c *Ctl) getAccessToken() (*AccessToken, error) {
 	return token, nil
 }
 
-func (c *Ctl) GetAccessToken() (*AccessToken, error) {
+func (c *Ctl) GetAccessToken(role model.Role) (*AccessToken, error) {
 
 	if c.token != nil {
 		return c.token, nil
 	}
 
-	t, err := c.getAccessToken()
+	t, err := c.getAccessToken(role)
 	if err != nil {
 		return nil, err
 	}
@@ -129,9 +153,9 @@ func (c *Ctl) GetAccessToken() (*AccessToken, error) {
 	return t, nil
 }
 
-func (c *Ctl) GetPhoneNumber(code string) (*PhoneInfo, error) {
+func (c *Ctl) GetPhoneNumber(code string, role model.Role) (*PhoneInfo, error) {
 
-	token, err := c.GetAccessToken()
+	token, err := c.GetAccessToken(role)
 	if err != nil {
 		return nil, nil
 	}
