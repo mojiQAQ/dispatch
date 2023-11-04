@@ -360,3 +360,30 @@ func (c *Ctl) ReviewSubOrder(mid, sid uint, auditorID uint, state model.OrderSta
 
 	return nil
 }
+
+func (c *Ctl) AutoFinishMOrder(order *model.TMasterOrder) error {
+
+	var err error
+	tx := c.db.Begin()
+	defer func() {
+		if err != nil {
+			rErr := tx.Rollback().Error
+			if rErr != nil {
+				c.Errorf("tx rollback failed, err=%v", rErr)
+			}
+		}
+	}()
+
+	err = c.changeOrderState(tx, order.ID, model.MOrderStateFinish)
+	if err != nil {
+		c.Errorf("cancel timeout order failed, uuid=%s, err=%v", order.UUID, err)
+		return err
+	}
+
+	err = c.uc.ReturnUnCompleteOrder(tx, order.UserID, order.Total-order.Complete, order.UUID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit().Error
+}

@@ -35,6 +35,7 @@ func (c *Ctl) Start() {
 			select {
 			case <-ticker.C:
 				c.Debugf("time to check order")
+				// 检查超时未完成订单
 				go c.checkFinishOrder()
 				go c.checkUnPayOrder()
 				//go c.checkAcceptOrder()
@@ -43,6 +44,7 @@ func (c *Ctl) Start() {
 	}()
 }
 
+// checkUnPayOrder 检查未支付订单
 func (c *Ctl) checkUnPayOrder() {
 
 	orders, err := c.GetMasterOrders("state = ?", model.MOrderStateCreated)
@@ -64,6 +66,7 @@ func (c *Ctl) checkUnPayOrder() {
 	}
 }
 
+// checkFinishOrder 自动结束未完成订单
 func (c *Ctl) checkFinishOrder() {
 
 	orders, err := c.GetMasterOrders("state = ?", model.MOrderStateDoing)
@@ -72,19 +75,19 @@ func (c *Ctl) checkFinishOrder() {
 	}
 
 	for _, order := range orders {
-		// 如果订单处于待支付状态 10 分钟，则自动取消
 		c.Debugf("now: %v, finish: %v", time.Now(), order.FinishAt)
 		if time.Now().After(order.FinishAt) {
 			c.Infof("update finish order")
-			err = c.changeOrderState(c.db, order.ID, model.MOrderStateFinish)
+			err = c.AutoFinishMOrder(order)
 			if err != nil {
-				c.Errorf("cancel timeout order failed, uuid=%s, err=%v", order.UUID, err)
+				c.Errorf("auto finish order uuid=%s failed, err=%s", order.UUID, err.Error())
 				continue
 			}
 		}
 	}
 }
 
+// checkAcceptOrder 自动终止已接受未完成子订单
 func (c *Ctl) checkAcceptOrder() {
 
 	subOrders, err := c.GetSubOrdersPlus(0, 0, []string{"1"})

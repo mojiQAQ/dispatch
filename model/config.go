@@ -22,11 +22,20 @@ type (
 		MchID      string
 	}
 
+	COS struct {
+		APPID     string
+		SecretID  string
+		SecretKey string
+		Bucket    string
+		Region    string
+	}
+
 	WXAuth struct {
 		URL       string
 		Publisher AppConf
 		Worker    AppConf
 		Mch       MchConf
+		COS       COS
 	}
 
 	Config struct {

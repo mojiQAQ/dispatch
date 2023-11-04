@@ -9,6 +9,7 @@ import (
 	"github.com/wechatpay-apiv3/wechatpay-go/core/option"
 	"github.com/wechatpay-apiv3/wechatpay-go/services/payments"
 	"github.com/wechatpay-apiv3/wechatpay-go/services/payments/jsapi"
+	"github.com/wechatpay-apiv3/wechatpay-go/services/transferbatch"
 	"github.com/wechatpay-apiv3/wechatpay-go/utils"
 	"net/http"
 )
@@ -81,4 +82,46 @@ func (c *Ctl) PrepayCallback(req *http.Request) (*payments.Transaction, error) {
 	}
 
 	return transaction, nil
+}
+
+func (c *Ctl) TransferToWorker(openid, tradeID, desc string, amount int64) (*transferbatch.InitiateBatchTransferResponse, error) {
+
+	svc := transferbatch.TransferBatchApiService{Client: c.wClient}
+	resp, _, err := svc.InitiateBatchTransfer(context.Background(), transferbatch.InitiateBatchTransferRequest{
+		Appid:       core.String(c.Conf.Worker.AppID),
+		OutBatchNo:  core.String(tradeID),
+		BatchName:   core.String(desc),
+		BatchRemark: core.String(desc),
+		TotalAmount: core.Int64(amount),
+		TotalNum:    core.Int64(1),
+		TransferDetailList: []transferbatch.TransferDetailInput{
+			{
+				OutDetailNo:    core.String(tradeID),
+				TransferAmount: core.Int64(amount),
+				TransferRemark: core.String(desc),
+				Openid:         core.String(openid),
+			},
+		},
+		TransferSceneId: core.String("1001"),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func (c *Ctl) CheckUnCompleteTransferOrder(tradeID string) (*transferbatch.TransferBatchEntity, error) {
+	svc := transferbatch.TransferBatchApiService{Client: c.wClient}
+	resp, _, err := svc.GetTransferBatchByOutNo(context.Background(),
+		transferbatch.GetTransferBatchByOutNoRequest{
+			OutBatchNo:      core.String(tradeID),
+			NeedQueryDetail: core.Bool(false),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }

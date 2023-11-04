@@ -36,6 +36,35 @@ func (c *Ctl) AddWxPayRecord(db *gorm.DB, openid string, amount int64, tradeID, 
 	return db.Model(model.TWxPayRecord{}).Create(record).Error
 }
 
+func (c *Ctl) AddWxTransferRecord(db *gorm.DB, openid string, amount int64, tradeID, batchID string) error {
+
+	record := &model.TWxTransferRecord{
+		TradeID: tradeID,
+		BatchID: batchID,
+		OpenID:  openid,
+		Amount:  amount,
+		State:   model.WxTransferStateACCEPTED,
+	}
+
+	return db.Model(model.TWxPayRecord{}).Create(record).Error
+}
+
+func (c *Ctl) GetWxTransferRecord(states ...string) ([]*model.TWxTransferRecord, error) {
+
+	rs := make([]*model.TWxTransferRecord, 0)
+	err := c.db.Model(model.TWxTransferRecord{}).
+		Where("state in ('')", strings.Join(states, "','")).Find(&rs).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return rs, nil
+}
+
+func (c *Ctl) UpdateWxTransferRecordState(db *gorm.DB, tradeID string, state string) error {
+	return db.Model(model.TWxPayRecord{}).Where("trade_id = ?", tradeID).Update("state", state).Error
+}
+
 func (c *Ctl) AddTradeRecord(db *gorm.DB, userID uint, Type model.TradeType, amount int64, TradeID string) error {
 
 	record := &model.TTradeRecord{

@@ -28,8 +28,7 @@ type (
 
 	ReqHandleBalance struct {
 		*model.ReqBase
-		TradeType model.TradeType `json:"trade_type"`
-		Amount    int64           `json:"amount"`
+		Amount int64 `json:"amount"`
 	}
 
 	PrePayInfo struct {
@@ -41,9 +40,13 @@ type (
 		Timestamp string `json:"timestamp"`
 	}
 
-	RespHandleBalance struct {
+	RespHandleBalanceRecharge struct {
 		*model.RespBase
 		PrepayInfo *PrePayInfo `json:"prepay_info"`
+	}
+
+	RespHandleBalanceWithdraw struct {
+		*model.RespBase
 	}
 
 	ReqGetUserInfo struct {
@@ -115,6 +118,18 @@ type (
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	}
+
+	Credentials struct {
+		TmpSecretID  string `json:"tmpSecretId,omitempty"`
+		TmpSecretKey string `json:"tmpSecretKey,omitempty"`
+		SessionToken string `json:"sessionToken,omitempty"`
+	}
+	RespGetTmpSecret struct {
+		Credentials Credentials `json:"credentials"`
+		ExpiredTime int         `json:"expiredTime,omitempty"`
+		Expiration  string      `json:"expiration,omitempty"`
+		StartTime   int         `json:"startTime,omitempty"`
+	}
 )
 
 func (c *Ctl) InitRouter(g *gin.RouterGroup) {
@@ -132,11 +147,16 @@ func (c *Ctl) InitRouter(g *gin.RouterGroup) {
 	// 用户详情
 	g.GET("/users/:openid", c.HandleGetUserInfo)
 
-	// 充值/提现
-	g.POST("/users/balance", c.HandleBalance)
+	// 充值
+	g.POST("/users/balance/recharge", c.HandleBalanceRecharge)
+
+	// 提现
+	g.POST("/users/balance/withdraw", c.HandleBalanceWithdraw)
 
 	// 微信支付确认回调
 	g.POST("/wechat_prepay_callback", c.HandlePrepayCallback)
+
+	g.GET("/tmpSecret", c.HandleGetTmpSecret)
 }
 
 func (c *Ctl) HandleRegister(ctx *gin.Context) {
@@ -238,7 +258,7 @@ func (c *Ctl) HandleRegisterUser(ctx *gin.Context) {
 	})
 }
 
-func (c *Ctl) HandleBalance(ctx *gin.Context) {
+func (c *Ctl) HandleBalanceRecharge(ctx *gin.Context) {
 
 	req := &ReqHandleBalance{}
 	err := ctx.ShouldBindBodyWith(req, binding.JSON)
@@ -269,15 +289,57 @@ func (c *Ctl) HandleBalance(ctx *gin.Context) {
 		return
 	}
 
-	prepayInfo, err := c.DoManageBalance(user.ID, req.TradeType, req.Amount)
+	prepayInfo, err := c.DoManageBalance(user.ID, model.TypeRecharge, req.Amount)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
 		return
 	}
 
-	ctx.JSON(http.StatusOK, &RespHandleBalance{
+	ctx.JSON(http.StatusOK, &RespHandleBalanceRecharge{
 		RespBase:   req.GenResponse(nil),
 		PrepayInfo: prepayInfo,
+	})
+}
+
+func (c *Ctl) HandleBalanceWithdraw(ctx *gin.Context) {
+
+	req := &ReqHandleBalance{}
+	err := ctx.ShouldBindBodyWith(req, binding.JSON)
+	if err != nil {
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	ok, err := valid.ValidateStruct(req)
+	if err != nil || !ok {
+		c.Errorf("request params invalid, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	openid := ctx.Query("openid")
+	if len(openid) == 0 {
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	user, err := c.GetUserByOpenID(openid)
+	if err != nil {
+		c.Errorf("check user failed: %s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	_, err = c.DoManageBalance(user.ID, model.TypeWithdraw, req.Amount)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, &RespHandleBalanceWithdraw{
+		RespBase: req.GenResponse(nil),
 	})
 }
 
@@ -342,5 +404,28 @@ func (c *Ctl) HandlePrepayCallback(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, &RespPrepayCallback{
 		Code:    "SUCCESS",
 		Message: "成功",
+	})
+}
+
+func (c *Ctl) HandleGetTmpSecret(ctx *gin.Context) {
+
+	result, err := c.wx.GetTmpSecret()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, &RespPrepayCallback{
+			Code:    "FAIL",
+			Message: "失败",
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, &RespGetTmpSecret{
+		Credentials: Credentials{
+			TmpSecretID:  result.Credentials.TmpSecretID,
+			TmpSecretKey: result.Credentials.TmpSecretKey,
+			SessionToken: result.Credentials.SessionToken,
+		},
+		StartTime:   result.StartTime,
+		ExpiredTime: result.ExpiredTime,
+		Expiration:  result.Expiration,
 	})
 }

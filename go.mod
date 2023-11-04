@@ -54,6 +54,7 @@ require (
 	github.com/prometheus/procfs v0.7.3 // indirect
 	github.com/radovskyb/watcher v1.0.7 // indirect
 	github.com/satori/go.uuid v1.2.0 // indirect
+	github.com/tencentyun/qcloud-cos-sts-sdk v0.0.0-20230907033301-e99498406670 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.11 // indirect
 	github.com/wechatpay-apiv3/wechatpay-go v0.2.17 // indirect

@@ -6,9 +6,11 @@ import (
 	"git.ucloudadmin.com/unetworks/app/pkg/httpclient"
 	"git.ucloudadmin.com/unetworks/app/pkg/log"
 	"github.com/mojiQAQ/dispatch/model"
+	sts "github.com/tencentyun/qcloud-cos-sts-sdk/go"
 	"github.com/wechatpay-apiv3/wechatpay-go/core"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/notify"
 	"net/http"
+	"time"
 )
 
 type (
@@ -195,4 +197,55 @@ func (c *Ctl) GetPhoneNumber(code string, role model.Role) (*PhoneInfo, error) {
 	}
 
 	return resp.PhoneInfo, nil
+}
+
+func (c *Ctl) GetTmpSecret() (*sts.CredentialResult, error) {
+
+	cli := sts.NewClient(c.Conf.COS.SecretID, c.Conf.COS.SecretKey, nil)
+
+	opt := &sts.CredentialOptions{
+		DurationSeconds: int64(time.Hour.Seconds()),
+		Region:          c.Conf.COS.Region,
+		Policy: &sts.CredentialPolicy{
+			Statement: []sts.CredentialPolicyStatement{
+				{
+					// 密钥的权限列表。简单上传和分片需要以下的权限，其他权限列表请看 https://cloud.tencent.com/document/product/436/31923
+					Action: []string{
+						// 简单上传
+						"name/cos:PostObject",
+						"name/cos:PutObject",
+						// 分片上传
+						"name/cos:InitiateMultipartUpload",
+						"name/cos:ListMultipartUploads",
+						"name/cos:ListParts",
+						"name/cos:UploadPart",
+						"name/cos:CompleteMultipartUpload",
+					},
+					Effect: "allow",
+					Resource: []string{
+						// 这里改成允许的路径前缀，可以根据自己网站的用户登录态判断允许上传的具体路径，例子： a.jpg 或者 a/* 或者 * (使用通配符*存在重大安全风险, 请谨慎评估使用)
+						// 存储桶的命名格式为 BucketName-APPID，此处填写的 bucket 必须为此格式
+						"qcs::cos:" + c.Conf.COS.Region + ":uid/" + c.Conf.COS.APPID + ":" + c.Conf.COS.Bucket + "/*",
+					},
+					// 开始构建生效条件 condition
+					// 关于 condition 的详细设置规则和COS支持的condition类型可以参考https://cloud.tencent.com/document/product/436/71306
+					//Condition: map[string]map[string]interface{}{
+					//	"ip_equal": map[string]interface{}{
+					//		"qcs:ip": []string{
+					//			"10.217.182.3/24",
+					//			"111.21.33.72/24",
+					//		},
+					//	},
+					//},
+				},
+			},
+		},
+	}
+	res, err := cli.GetCredential(opt)
+	if err != nil {
+		c.Errorf("get Credential failed, err=%s", err.Error())
+		return nil, err
+	}
+
+	return res, nil
 }
