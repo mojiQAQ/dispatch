@@ -48,6 +48,7 @@ var TradeTypeCN = map[TradeType]string{
 	TypeWithdraw:      "提现",
 	TypePublishOrder:  "派单",
 	TypeCompleteOrder: "接单",
+	TypeReturnOrder:   "退费",
 }
 
 const (

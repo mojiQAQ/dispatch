@@ -32,8 +32,8 @@ func (c *Ctl) InitRouter(g *gin.RouterGroup) {
 func (c *Ctl) HandleGetTrades(ctx *gin.Context) {
 
 	req := &ReqGetTrades{}
-	aUUID := ctx.Param("uuid")
-	userID := ctx.Param("user_id")
+	aUUID := ctx.Query("uuid")
+	userID := ctx.Query("user_id")
 	if len(userID) == 0 {
 		userID = "0"
 	}
@@ -46,7 +46,7 @@ func (c *Ctl) HandleGetTrades(ctx *gin.Context) {
 		return
 	}
 
-	t := ctx.Param("type")
+	t := ctx.Query("type")
 	if len(t) == 0 {
 		t = "0"
 	}

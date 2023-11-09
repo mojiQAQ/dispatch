@@ -214,8 +214,8 @@ func (c *Ctl) GetSubOrdersPlus(mid, userID uint, states []string) ([]*model.TSub
 	}
 
 	if len(states) != 0 {
-		expr = append(expr, "state in (?)")
-		args = append(args, strings.Join(states, ","))
+		tmp := fmt.Sprintf("state in (%s)", strings.Join(states, ","))
+		expr = append(expr, tmp)
 	}
 
 	return c.getSubOrders(strings.Join(expr, " AND "), args...)
@@ -374,13 +374,18 @@ func (c *Ctl) AutoFinishMOrder(order *model.TMasterOrder) error {
 		}
 	}()
 
+	// 修改未完成订单状态
 	err = c.changeOrderState(tx, order.ID, model.MOrderStateFinish)
 	if err != nil {
 		c.Errorf("cancel timeout order failed, uuid=%s, err=%v", order.UUID, err)
 		return err
 	}
 
-	err = c.uc.ReturnUnCompleteOrder(tx, order.UserID, order.Total-order.Complete, order.UUID)
+	// 退回金额等于 (总单数-已完成单数) * 单价（200分）
+	amount := (order.Total - order.Complete) * PublishOrderPrice
+
+	// 退回未完成订单金额至商家账户
+	err = c.uc.ReturnUnCompleteOrder(tx, order.UserID, amount, order.UUID)
 	if err != nil {
 		return err
 	}

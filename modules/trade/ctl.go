@@ -109,3 +109,28 @@ func (c *Ctl) GetTrades(uuid string, userID int, tradeType model.TradeType) ([]*
 
 	return c.getTrades(strings.Join(expr, " AND "), args...)
 }
+
+func (c *Ctl) getTradesPage(offset, limit int, condition string, args ...interface{}) ([]*model.TTradeRecord, error) {
+
+	trades := make([]*model.TTradeRecord, 0)
+	err := c.db.Model(model.TTradeRecord{}).Where(condition, args...).
+		Offset(offset).Limit(limit).Find(&trades).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return trades, nil
+}
+
+func (c *Ctl) GetTradesPage(userID uint, offset, limit int) ([]*model.TTradeRecord, error) {
+
+	expr := make([]string, 0)
+	args := make([]interface{}, 0)
+
+	if userID != 0 {
+		expr = append(expr, "user_id = ?")
+		args = append(args, userID)
+	}
+
+	return c.getTradesPage(offset, limit, strings.Join(expr, " AND "), args...)
+}

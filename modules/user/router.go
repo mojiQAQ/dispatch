@@ -124,11 +124,26 @@ type (
 		TmpSecretKey string `json:"tmpSecretKey,omitempty"`
 		SessionToken string `json:"sessionToken,omitempty"`
 	}
+
 	RespGetTmpSecret struct {
 		Credentials Credentials `json:"credentials"`
 		ExpiredTime int         `json:"expiredTime,omitempty"`
 		Expiration  string      `json:"expiration,omitempty"`
 		StartTime   int         `json:"startTime,omitempty"`
+	}
+
+	ReqGetTrades struct {
+		*model.ReqBase
+	}
+
+	Trade struct {
+		*model.TTradeRecord
+		TypeCN string `json:"type_cn"`
+	}
+
+	RespGetTrades struct {
+		*model.RespBase
+		Trades []*Trade `json:"trades"`
 	}
 )
 
@@ -146,6 +161,9 @@ func (c *Ctl) InitRouter(g *gin.RouterGroup) {
 
 	// 用户详情
 	g.GET("/users/:openid", c.HandleGetUserInfo)
+
+	// 交易记录
+	g.GET("/users/transactions", c.HandleGetTransactions)
 
 	// 充值
 	g.POST("/users/balance/recharge", c.HandleBalanceRecharge)
@@ -178,6 +196,7 @@ func (c *Ctl) HandleRegister(ctx *gin.Context) {
 
 	user, err := c.Register(req.PhoneCode, req.UserCode, req.Role)
 	if err != nil {
+		c.Errorf("register failed, err=%s", err.Error())
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
 		return
 	}
@@ -248,6 +267,7 @@ func (c *Ctl) HandleRegisterUser(ctx *gin.Context) {
 
 	user, err := c.RegisterUser(req.WXID, req.PhoneNumber, req.Role)
 	if err != nil {
+		c.Errorf("register failed, err=%s", err.Error())
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
 		return
 	}
@@ -427,5 +447,73 @@ func (c *Ctl) HandleGetTmpSecret(ctx *gin.Context) {
 		StartTime:   result.StartTime,
 		ExpiredTime: result.ExpiredTime,
 		Expiration:  result.Expiration,
+	})
+}
+
+func (c *Ctl) HandleGetTransactions(ctx *gin.Context) {
+
+	req := &ReqGetTrades{}
+	err := ctx.ShouldBindBodyWith(req, binding.JSON)
+	if err != nil {
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	ok, err := valid.ValidateStruct(req)
+	if err != nil || !ok {
+		c.Errorf("request params invalid, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	openid := ctx.Query("openid")
+	if len(openid) == 0 {
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	offset, limit := 0, 0
+	offsetStr := ctx.Query("offset")
+	offset, err = strconv.Atoi(offsetStr)
+	if err != nil {
+		c.Errorf("parsing offset failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	limitStr := ctx.Query("limit")
+	limit, err = strconv.Atoi(limitStr)
+	if err != nil {
+		c.Errorf("parsing limit failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	user, err := c.GetUserByOpenID(openid)
+	if err != nil {
+		c.Errorf("check user failed: %s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	trades, err := c.trade.GetTradesPage(user.ID, offset, limit)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
+		return
+	}
+
+	data := make([]*Trade, 0)
+	for _, t := range trades {
+		data = append(data, &Trade{
+			TTradeRecord: t,
+			TypeCN:       model.TradeTypeCN[t.Type],
+		})
+	}
+
+	ctx.JSON(http.StatusOK, &RespGetTrades{
+		RespBase: req.GenResponse(nil),
+		Trades:   data,
 	})
 }

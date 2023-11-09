@@ -65,18 +65,21 @@ func (c *Ctl) checkTransferBatchResult() error {
 	}
 
 	for _, r := range records {
+		// 查询提现未完成的订单
 		info, err := c.wx.CheckUnCompleteTransferOrder(r.TradeID)
 		if err != nil {
 			c.Errorf("check uncomplete transfer record failed, err=%s", err.Error())
 			continue
 		}
 
+		// 获取用户信息
 		user, err := c.GetUserByOpenID(r.OpenID)
 		if err != nil {
 			c.Errorf("get user failed, err=%s", err.Error())
 			continue
 		}
 
+		// 更新提现记录
 		err = c.UpdateTransferRecord(r.TradeID, *info.TransferBatch.BatchStatus,
 			*info.TransferDetailList[0].DetailStatus, user, *info.TransferBatch.TotalAmount)
 		if err != nil {
