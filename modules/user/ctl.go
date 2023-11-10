@@ -42,13 +42,12 @@ func (c *Ctl) Start() {
 			case <-ticker.C:
 				c.Debugf("time to check order")
 				// 检查超时未完成订单
-				go c.checkTransferBatchResult()
+				go c.autoCheckTransferBatchResult()
 			}
 		}
 	}()
 }
 
-// checkTransferBatchResult 检查转账记录
 func (c *Ctl) autoCheckTransferBatchResult() {
 
 	err := c.checkTransferBatchResult()
@@ -58,6 +57,7 @@ func (c *Ctl) autoCheckTransferBatchResult() {
 	}
 }
 
+// checkTransferBatchResult 检查转账记录
 func (c *Ctl) checkTransferBatchResult() error {
 	records, err := c.trade.GetWxTransferRecord(model.WxTransferStateACCEPTED, model.WxTransferStatePROCESSING)
 	if err != nil {
@@ -80,7 +80,7 @@ func (c *Ctl) checkTransferBatchResult() error {
 		}
 
 		// 更新提现记录
-		err = c.UpdateTransferRecord(r.TradeID, *info.TransferBatch.BatchStatus,
+		err = c.UpdateWithdrawState(r.TradeID, *info.TransferBatch.BatchStatus,
 			*info.TransferDetailList[0].DetailStatus, user, *info.TransferBatch.TotalAmount)
 		if err != nil {
 			c.Errorf("update withdraw trade record failed, err=%s", err.Error())

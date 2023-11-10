@@ -1,6 +1,7 @@
 package order
 
 import (
+	"strconv"
 	"time"
 
 	"gorm.io/gorm"
@@ -38,7 +39,7 @@ func (c *Ctl) Start() {
 				// 检查超时未完成订单
 				go c.checkFinishOrder()
 				go c.checkUnPayOrder()
-				//go c.checkAcceptOrder()
+				go c.checkAcceptOrder()
 			}
 		}
 	}()
@@ -87,19 +88,22 @@ func (c *Ctl) checkFinishOrder() {
 	}
 }
 
-// checkAcceptOrder 自动终止已接受未完成子订单
+// checkAcceptOrder 自动结束未完成子订单
 func (c *Ctl) checkAcceptOrder() {
 
-	subOrders, err := c.GetSubOrdersPlus(0, 0, []string{"1"})
+	subOrders, err := c.GetSubOrdersPlus(0, 0, []string{
+		strconv.Itoa(int(model.SOrderStateAccept)),
+		strconv.Itoa(int(model.SOrderStateReject)),
+	})
 	if err != nil {
 		return
 	}
 
 	for _, so := range subOrders {
 		if time.Now().Sub(so.CreatedAt).Minutes() >= 10 {
-			err = c.changeSubOrderState(c.db, so.ID, model.SOrderStateTimeout)
+			err = c.AutoFinishSubOrder(so)
 			if err != nil {
-				c.Errorf("set timeout sub order failed, uuid=%s, err=%v", so.UUID, err)
+				c.Errorf("auto finish sub order uuid=%s failed, err=%s", so.UUID, err.Error())
 				continue
 			}
 		}

@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"github.com/mojiQAQ/dispatch/modules/utils"
 	"gorm.io/gorm"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mojiQAQ/dispatch/model"
 )
@@ -170,6 +172,10 @@ func (c *Ctl) CreateSubOrder(mid uint, userID uint) (*model.TSubOrder, error) {
 
 	if mOrder.State != model.MOrderStateDoing {
 		return nil, fmt.Errorf("订单已失效")
+	}
+
+	if time.Now().After(mOrder.FinishAt) {
+		return nil, fmt.Errorf("订单已截止")
 	}
 
 	subOrders, err := c.GetAllSubOrders(mid)
@@ -361,6 +367,7 @@ func (c *Ctl) ReviewSubOrder(mid, sid uint, auditorID uint, state model.OrderSta
 	return nil
 }
 
+// AutoFinishMOrder 自动结束未完成的订单并退回未接受的子订单金额
 func (c *Ctl) AutoFinishMOrder(order *model.TMasterOrder) error {
 
 	var err error
@@ -381,13 +388,63 @@ func (c *Ctl) AutoFinishMOrder(order *model.TMasterOrder) error {
 		return err
 	}
 
-	// 退回金额等于 (总单数-已完成单数) * 单价（200分）
-	amount := (order.Total - order.Complete) * PublishOrderPrice
+	subs, err := c.GetSubOrdersPlus(order.ID, 0, []string{
+		strconv.Itoa(int(model.SOrderStateAccept)),
+		strconv.Itoa(int(model.SOrderStateSubmit)),
+	})
+	if err != nil {
+		c.Errorf("get sub order failed, uuid=%s, err=%v", order.UUID, err)
+		return err
+	}
+
+	// 退回金额等于 (总单数-已完成-已接受-已提交) * 单价（200分）
+	amount := (order.Total - order.Complete - int64(len(subs))) * PublishOrderPrice
 
 	// 退回未完成订单金额至商家账户
 	err = c.uc.ReturnUnCompleteOrder(tx, order.UserID, amount, order.UUID)
 	if err != nil {
 		return err
+	}
+
+	return tx.Commit().Error
+}
+
+// AutoFinishSubOrder 自动终止已接受、驳回状态的子订单，若父订单已截止则退费子订单
+func (c *Ctl) AutoFinishSubOrder(subOrder *model.TSubOrder) error {
+
+	var err error
+	tx := c.db.Begin()
+	defer func() {
+		if err != nil {
+			rErr := tx.Rollback().Error
+			if rErr != nil {
+				c.Errorf("tx rollback failed, err=%v", rErr)
+			}
+		}
+	}()
+
+	err = c.changeSubOrderState(c.db, subOrder.ID, model.SOrderStateTimeout)
+	if err != nil {
+		c.Errorf("set timeout sub order failed, uuid=%s, err=%v", subOrder.UUID, err)
+		return err
+	}
+
+	mOrder, err := c.GetOrder(subOrder.MID)
+	if err != nil {
+		c.Errorf("get master order failed, uuid=%s, err=%v", subOrder.UUID, err)
+		return err
+	}
+
+	// 如果父订单已结束，则退回该子订单金额
+	if mOrder.FinishAt.Before(time.Now()) {
+		// 退回金额等于 子订单单价（200分）
+		amount := PublishOrderPrice
+
+		// 退回未完成订单金额至商家账户
+		err = c.uc.ReturnUnCompleteOrder(tx, mOrder.UserID, int64(amount), mOrder.UUID)
+		if err != nil {
+			return err
+		}
 	}
 
 	return tx.Commit().Error

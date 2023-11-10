@@ -8,7 +8,8 @@ type (
 		TradeID string    `gorm:"column:trade_id" json:"trade_id"` // 交易 ID，如提现信息、充值信息
 		UserID  uint      `gorm:"column:user_id" json:"user_id"`   // 用户 ID
 		Type    TradeType `gorm:"column:type" json:"type"`         // 交易类型
-		Amount  int64     `gorm:"amount" json:"amount"`            // 金额
+		Amount  int64     `gorm:"column:amount" json:"amount"`     // 金额
+		Balance int64     `gorm:"column:balance" json:"balance"`   // 余额
 	}
 
 	// TWxPayRecord 充值预支付记录
@@ -41,6 +42,10 @@ const (
 	TypePublishOrder                       // 商家发布订单
 	TypeCompleteOrder                      // 用户完成订单
 	TypeReturnOrder                        // 退费未完成订单
+	TypeRecharging                         // 充值中
+	TypeWithdrawing                        // 提现中
+	TypeRechargeFail                       // 充值失败
+	TypeWithdrawFail                       // 提现失败
 )
 
 var TradeTypeCN = map[TradeType]string{
@@ -49,6 +54,8 @@ var TradeTypeCN = map[TradeType]string{
 	TypePublishOrder:  "派单",
 	TypeCompleteOrder: "接单",
 	TypeReturnOrder:   "退费",
+	TypeRecharging:    "充值中",
+	TypeWithdrawing:   "提现中",
 }
 
 const (

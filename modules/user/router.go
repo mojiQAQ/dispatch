@@ -453,13 +453,6 @@ func (c *Ctl) HandleGetTmpSecret(ctx *gin.Context) {
 func (c *Ctl) HandleGetTransactions(ctx *gin.Context) {
 
 	req := &ReqGetTrades{}
-	err := ctx.ShouldBindBodyWith(req, binding.JSON)
-	if err != nil {
-		c.Errorf("parsing request failed, err=%s", err.Error())
-		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
-		return
-	}
-
 	ok, err := valid.ValidateStruct(req)
 	if err != nil || !ok {
 		c.Errorf("request params invalid, err=%s", err.Error())

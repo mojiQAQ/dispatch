@@ -65,16 +65,27 @@ func (c *Ctl) UpdateWxTransferRecordState(db *gorm.DB, tradeID string, state str
 	return db.Model(model.TWxPayRecord{}).Where("trade_id = ?", tradeID).Update("state", state).Error
 }
 
-func (c *Ctl) AddTradeRecord(db *gorm.DB, userID uint, Type model.TradeType, amount int64, TradeID string) error {
+func (c *Ctl) AddTradeRecord(db *gorm.DB, userID uint, Type model.TradeType, amount, balance int64, TradeID string) error {
 
 	record := &model.TTradeRecord{
 		TradeID: TradeID,
 		UserID:  userID,
 		Type:    Type,
 		Amount:  amount,
+		Balance: balance,
 	}
 
 	return db.Model(model.TTradeRecord{}).Create(record).Error
+}
+
+func (c *Ctl) UpdateTradeRecordState(tx *gorm.DB, tradeID string, Type model.TradeType) error {
+
+	return tx.Model(model.TTradeRecord{}).Where("trade_id = ?", tradeID).Update("type", Type).Error
+}
+
+func (c *Ctl) UpdateTradeRecordBalance(tx *gorm.DB, tradeID string, balance int64) error {
+
+	return tx.Model(model.TTradeRecord{}).Where("trade_id = ?", tradeID).Update("balance", balance).Error
 }
 
 func (c *Ctl) getTrades(condition string, args ...interface{}) ([]*model.TTradeRecord, error) {
