@@ -91,7 +91,7 @@ func (c *Ctl) UpdateTradeRecordBalance(tx *gorm.DB, tradeID string, balance int6
 func (c *Ctl) getTrades(condition string, args ...interface{}) ([]*model.TTradeRecord, error) {
 
 	trades := make([]*model.TTradeRecord, 0)
-	err := c.db.Model(model.TTradeRecord{}).Where(condition, args...).Find(&trades).Error
+	err := c.db.Model(model.TTradeRecord{}).Where(condition, args...).Order("id desc").Find(&trades).Error
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (c *Ctl) getTradesPage(offset, limit int, condition string, args ...interfa
 
 	trades := make([]*model.TTradeRecord, 0)
 	err := c.db.Model(model.TTradeRecord{}).Where(condition, args...).
-		Offset(offset).Limit(limit).Find(&trades).Error
+		Offset(offset).Limit(limit).Order("id desc").Find(&trades).Error
 	if err != nil {
 		return nil, err
 	}
