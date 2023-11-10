@@ -56,6 +56,8 @@ var TradeTypeCN = map[TradeType]string{
 	TypeReturnOrder:   "退费",
 	TypeRecharging:    "充值中",
 	TypeWithdrawing:   "提现中",
+	TypeRechargeFail:  "充值失败",
+	TypeWithdrawFail:  "提现失败",
 }
 
 const (

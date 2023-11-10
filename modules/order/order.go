@@ -267,6 +267,18 @@ func (c *Ctl) SubmitSubOrder(mid, sid uint, req *ReqSubmitSubOrders) error {
 		return fmt.Errorf("the sub order state only accept and reject can be submit")
 	}
 
+	// 如果订单为驳回，且任务已经结束，则不可以再提交该订单
+	if order.State == model.SOrderStateReject {
+		mOrder, err := c.GetOrder(mid)
+		if err != nil {
+			return err
+		}
+
+		if time.Now().After(mOrder.FinishAt) {
+			return fmt.Errorf("订单已结束")
+		}
+	}
+
 	// 提交订单
 	order.State = model.SOrderStateSubmit
 	order.Context = req.Context
