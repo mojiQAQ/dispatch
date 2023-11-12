@@ -59,6 +59,12 @@ type (
 		Info *model.User `json:"info"`
 	}
 
+	ReqUpdateUserInfo struct {
+		*model.ReqBase
+		Name   string `json:"name" valid:"required"`
+		Avatar string `json:"avatar" valid:"required"`
+	}
+
 	ReqGetUsers struct {
 		*model.ReqBase
 	}
@@ -161,6 +167,9 @@ func (c *Ctl) InitRouter(g *gin.RouterGroup) {
 
 	// 用户详情
 	g.GET("/users/:openid", c.HandleGetUserInfo)
+
+	// 用户详情
+	g.PUT("/users/:openid", c.HandleUpdateUser)
 
 	// 交易记录
 	g.GET("/users/transactions", c.HandleGetTransactions)
@@ -508,5 +517,41 @@ func (c *Ctl) HandleGetTransactions(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, &RespGetTrades{
 		RespBase: req.GenResponse(nil),
 		Trades:   data,
+	})
+}
+
+func (c *Ctl) HandleUpdateUser(ctx *gin.Context) {
+
+	req := &ReqUpdateUserInfo{}
+	err := ctx.ShouldBindBodyWith(req, binding.JSON)
+	if err != nil {
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	ok, err := valid.ValidateStruct(req)
+	if err != nil || !ok {
+		c.Errorf("request params invalid, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+		return
+	}
+
+	openID := ctx.Param("openid")
+	if len(openID) == 0 {
+		err := fmt.Errorf("invalid openid")
+		c.Errorf("parsing request failed, err=%s", err.Error())
+		ctx.JSON(http.StatusBadRequest, req.GenResponse(err))
+	}
+
+	user, err := c.UpdateUserInfo(openID, req.Name, req.Avatar)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
+		return
+	}
+
+	ctx.JSON(http.StatusOK, &RespGetUserInfo{
+		RespBase: req.GenResponse(err),
+		Info:     user,
 	})
 }

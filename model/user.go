@@ -9,6 +9,8 @@ type (
 	}
 
 	User struct {
+		Name    string `gorm:"column:name" json:"name"`       // 用户名
+		Avatar  string `gorm:"column:avatar" json:"avatar"`   // 头像
 		Role    Role   `gorm:"column:role" json:"role"`       // 用户角色
 		Balance int64  `gorm:"column:balance" json:"balance"` // 余额，单位：分
 		Phone   string `gorm:"column:phone" json:"phone"`     // 电话号码

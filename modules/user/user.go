@@ -1,7 +1,9 @@
 package user
 
 import (
+	"errors"
 	"github.com/mojiQAQ/dispatch/model"
+	"gorm.io/gorm"
 )
 
 func (c *Ctl) CreateUser(user *model.User) error {
@@ -102,5 +104,42 @@ func (c *Ctl) Register(phoneCode, userCode string, role model.Role) (*model.User
 		return nil, err
 	}
 
-	return c.RegisterUser(auth.OpenID, phone.PhoneNumber, role)
+	user, err := c.GetUserByOpenID(auth.OpenID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.RegisterUser(auth.OpenID, phone.PhoneNumber, role)
+		}
+		return nil, err
+	}
+
+	return user.User, nil
+}
+
+func (c *Ctl) UpdateUserInfo(openid, name, avatar string) (*model.User, error) {
+
+	user, err := c.GetUserByOpenID(openid)
+	if err != nil {
+		return nil, err
+	}
+
+	data := map[string]string{}
+	if user.Name != name {
+		data["name"] = name
+	}
+
+	if user.Avatar != avatar {
+		data["avatar"] = avatar
+	}
+
+	err = c.db.Model(model.TUser{}).Where("openid = ?", openid).Updates(data).Error
+	if err != nil {
+		return nil, err
+	}
+
+	userNew, err := c.GetUserByOpenID(openid)
+	if err != nil {
+		return nil, err
+	}
+
+	return userNew.User, err
 }
