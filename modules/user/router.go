@@ -546,6 +546,7 @@ func (c *Ctl) HandleUpdateUser(ctx *gin.Context) {
 
 	user, err := c.UpdateUserInfo(openID, req.Name, req.Avatar)
 	if err != nil {
+		c.Errorf("update user info failed, err=%s", err.Error())
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
 		return
 	}

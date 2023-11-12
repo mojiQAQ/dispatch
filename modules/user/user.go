@@ -122,7 +122,7 @@ func (c *Ctl) UpdateUserInfo(openid, name, avatar string) (*model.User, error) {
 		return nil, err
 	}
 
-	data := map[string]string{}
+	data := map[string]interface{}{}
 	if user.Name != name {
 		data["name"] = name
 	}
