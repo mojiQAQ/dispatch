@@ -18,6 +18,8 @@ type (
 		WXID        string     `json:"wx_id"`
 		PhoneNumber string     `json:"phone_number"`
 		Role        model.Role `json:"role"`
+		Name        string     `json:"name"`
+		Avatar      string     `json:"avatar"`
 	}
 
 	RespRegisterUser struct {
@@ -95,6 +97,8 @@ type (
 		PhoneCode string     `json:"phone_code" valid:"required"`
 		UserCode  string     `json:"user_code" valid:"required"`
 		Role      model.Role `json:"role" valid:"required"`
+		Name      string     `json:"name" valid:"required"`
+		Avatar    string     `json:"avatar"`
 	}
 
 	RespRegister struct {
@@ -203,7 +207,7 @@ func (c *Ctl) HandleRegister(ctx *gin.Context) {
 		return
 	}
 
-	user, err := c.Register(req.PhoneCode, req.UserCode, req.Role)
+	user, err := c.Register(req.Name, req.Avatar, req.PhoneCode, req.UserCode, req.Role)
 	if err != nil {
 		c.Errorf("register failed, err=%s", err.Error())
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))
@@ -274,7 +278,7 @@ func (c *Ctl) HandleRegisterUser(ctx *gin.Context) {
 		return
 	}
 
-	user, err := c.RegisterUser(req.WXID, req.PhoneNumber, req.Role)
+	user, err := c.RegisterUser(req.WXID, req.PhoneNumber, req.Name, req.Avatar, req.Role)
 	if err != nil {
 		c.Errorf("register failed, err=%s", err.Error())
 		ctx.JSON(http.StatusInternalServerError, req.GenResponse(err))

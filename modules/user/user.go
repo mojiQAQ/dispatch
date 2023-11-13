@@ -48,9 +48,11 @@ func (c *Ctl) GetUserByOpenID(id string) (*model.TUser, error) {
 	return user, nil
 }
 
-func (c *Ctl) RegisterUser(openID, pn string, role model.Role) (*model.User, error) {
+func (c *Ctl) RegisterUser(openID, pn, name, avatar string, role model.Role) (*model.User, error) {
 
 	user := &model.User{
+		Name:    name,
+		Avatar:  avatar,
 		Role:    role,
 		Balance: 0,
 		Phone:   pn,
@@ -90,7 +92,7 @@ func (c *Ctl) Login(code string, role model.Role) (*model.User, error) {
 	return userInfo.User, nil
 }
 
-func (c *Ctl) Register(phoneCode, userCode string, role model.Role) (*model.User, error) {
+func (c *Ctl) Register(name, avatar, phoneCode, userCode string, role model.Role) (*model.User, error) {
 
 	// 获取手机号
 	phone, err := c.wx.GetPhoneNumber(phoneCode, role)
@@ -107,7 +109,7 @@ func (c *Ctl) Register(phoneCode, userCode string, role model.Role) (*model.User
 	user, err := c.GetUserByOpenID(auth.OpenID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return c.RegisterUser(auth.OpenID, phone.PhoneNumber, role)
+			return c.RegisterUser(auth.OpenID, phone.PhoneNumber, name, avatar, role)
 		}
 		return nil, err
 	}
